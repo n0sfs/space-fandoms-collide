@@ -51,6 +51,14 @@ function saveGameData() {
     updateMenuUI();
 }
 
+// RESTORED: Leaderboard save function
+function checkAndSaveScore() {
+    highScores.push({ name: currentPlayerName, score: score });
+    highScores.sort((a, b) => b.score - a.score);
+    highScores = highScores.slice(0, 5);
+    saveGameData();
+}
+
 function updateMenuUI() {
     if(menuScrapEl) menuScrapEl.innerText = totalScrap;
     if(leaderboardList) { leaderboardList.innerHTML = ""; highScores.forEach((entry, i) => leaderboardList.innerHTML += `<div class="score-row"><span>${i+1}. ${entry.name}</span><span>${entry.score}</span></div>`); }
@@ -84,7 +92,6 @@ let levelTimer3D = 0;
 const FOV = 400;
 let camX = 0, camY = 0;
 let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
-// Generate persistent 3D stars
 for(let i=0; i<250; i++) stars3D.push({x: (Math.random()-0.5)*5000, y: (Math.random()-0.5)*5000, z: Math.random()*3000});
 
 // --- AUDIO ---
@@ -646,8 +653,13 @@ function update3D(dt) {
         let spawnRate = 0.03 + (level * 0.002);
         if (Math.random() < spawnRate) spawnTarget3D();
     } else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
-        totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData();
-        level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
+        // PROPER 3D EXIT LOGIC
+        level++; 
+        updateUI(); 
+        gameState = "LEVEL_TRANSITION"; 
+        hyperspace = 0; 
+        playSfx('powerup');
+        bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = [];
         return;
     }
 
@@ -839,7 +851,9 @@ function update(dt) {
                 if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
                 
                 playSfx('hit');
-                if (t.hp !== undefined && t.hp > dmg) { t.hp -= dmg; t.hitFlash = 0.1; score += 25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; }
+                if (t.hp !== undefined && t.hp > dmg) { 
+                    t.hp -= dmg; t.hitFlash = 0.1; score += 25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; 
+                }
                 
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
                 spawnParticles(t.x, t.y, t.type==="asteroid" ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
@@ -872,7 +886,7 @@ function update(dt) {
     }
 
     if (targets.length === 0 && gameState === "PLAYING") { 
-        if (level >= 25) { totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "VICTORY"; } 
+        if (level >= 25) { totalScrap += currentRunScrap; checkAndSaveScore(); gameState = "VICTORY"; } 
         else { level++; updateUI(); gameState = "LEVEL_TRANSITION"; bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup'); } 
     }
 }
