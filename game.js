@@ -38,7 +38,7 @@ let selectedShipType = "xwing";
 let currentPlayerName = "AAA";
 let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [];
 
-let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0;
+let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
 
 let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
@@ -416,7 +416,6 @@ function startGame(shipId) {
     currentPlayerName = nameVal; 
     selectedShipType = shipId; 
     
-    if (shipNameEl && ShipDesigns[shipId]) shipNameEl.innerText = ShipDesigns[shipId].name; 
     if (menuOverlay) menuOverlay.classList.add("hidden");
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
     
