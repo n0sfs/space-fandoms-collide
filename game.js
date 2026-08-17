@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// UI Elements
+// UI Elements (Securely declared to prevent Reference Errors!)
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
 const hpEl = document.getElementById("hpDisplay");
@@ -10,6 +10,11 @@ const bombEl = document.getElementById("bombDisplay");
 const heatEl = document.getElementById("heatDisplay");
 const comboEl = document.getElementById("comboDisplay");
 const scrapEl = document.getElementById("scrapDisplay");
+
+// Legacy UI Elements (Safely catch null if missing from HTML)
+const powerupEl = document.getElementById("powerupDisplay");
+const livesEl = document.getElementById("livesDisplay");
+const shipNameEl = document.getElementById("shipNameDisplay");
 
 const menuOverlay = document.getElementById("menuOverlay");
 const pauseOverlay = document.getElementById("pauseOverlay");
@@ -42,6 +47,7 @@ function loadSaveData() {
     if (highScores.length === 0) highScores = [{name: "VDR", score: 10000}, {name: "LUK", score: 8000}, {name: "HAN", score: 6000}, {name: "BBA", score: 4000}, {name: "RD2", score: 2000}];
     updateMenuUI();
 }
+
 function saveGameData() {
     try {
         localStorage.setItem("sfc_scores", JSON.stringify(highScores));
