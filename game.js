@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// UI Elements (Securely declared to prevent Reference Errors!)
+// UI Elements 
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
 const hpEl = document.getElementById("hpDisplay");
@@ -11,7 +11,6 @@ const heatEl = document.getElementById("heatDisplay");
 const comboEl = document.getElementById("comboDisplay");
 const scrapEl = document.getElementById("scrapDisplay");
 
-// Legacy UI Elements (Safely catch null if missing from HTML)
 const powerupEl = document.getElementById("powerupDisplay");
 const livesEl = document.getElementById("livesDisplay");
 const shipNameEl = document.getElementById("shipNameDisplay");
@@ -28,7 +27,6 @@ const resumeBtn = document.getElementById("resumeBtn");
 const restartGameBtn = document.getElementById("restartGameBtn");
 const quitBtn = document.getElementById("quitBtn");
 
-// Shop Buttons
 const upgBombBtn = document.getElementById("upgBombBtn");
 const upgSpeedBtn = document.getElementById("upgSpeedBtn");
 const upgShieldBtn = document.getElementById("upgShieldBtn");
@@ -49,50 +47,47 @@ function loadSaveData() {
 }
 
 function saveGameData() {
-    try {
-        localStorage.setItem("sfc_scores", JSON.stringify(highScores));
-        localStorage.setItem("sfc_scrap", totalScrap);
-        localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades));
-    } catch(e) {}
+    try { localStorage.setItem("sfc_scores", JSON.stringify(highScores)); localStorage.setItem("sfc_scrap", totalScrap); localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades)); } catch(e) {}
     updateMenuUI();
 }
 
 function updateMenuUI() {
     if(menuScrapEl) menuScrapEl.innerText = totalScrap;
     if(leaderboardList) { leaderboardList.innerHTML = ""; highScores.forEach((entry, i) => leaderboardList.innerHTML += `<div class="score-row"><span>${i+1}. ${entry.name}</span><span>${entry.score}</span></div>`); }
-    
     if(upgBombBtn) { upgBombBtn.innerText = `+1 BOMB (${upgrades.bombs}/3) - 500`; upgBombBtn.disabled = (totalScrap < 500 || upgrades.bombs >= 3); }
     if(upgSpeedBtn) { upgSpeedBtn.innerText = `+5% SPD (${upgrades.speed}/5) - 300`; upgSpeedBtn.disabled = (totalScrap < 300 || upgrades.speed >= 5); }
     if(upgShieldBtn) { upgShieldBtn.innerText = `+20 SHLD (${upgrades.shield}/5) - 400`; upgShieldBtn.disabled = (totalScrap < 400 || upgrades.shield >= 5); }
 }
 
-// Shop Listeners
 if(upgBombBtn) upgBombBtn.addEventListener("click", (e) => { e.preventDefault(); if(totalScrap>=500 && upgrades.bombs<3) { totalScrap-=500; upgrades.bombs++; saveGameData(); playSfx('powerup'); }});
 if(upgSpeedBtn) upgSpeedBtn.addEventListener("click", (e) => { e.preventDefault(); if(totalScrap>=300 && upgrades.speed<5) { totalScrap-=300; upgrades.speed++; saveGameData(); playSfx('powerup'); }});
 if(upgShieldBtn) upgShieldBtn.addEventListener("click", (e) => { e.preventDefault(); if(totalScrap>=400 && upgrades.shield<5) { totalScrap-=400; upgrades.shield++; saveGameData(); playSfx('powerup'); }});
 
-// Game State
+// --- GLOBAL GAME STATE ---
 let gameState = "MENU"; 
 let gameDifficulty = "moderate"; 
 let score = 0, level = 1, frames = 0;
 let shake = 0, hyperspace = 0, nukeFlash = 0;
+let playerHp = 100, playerMaxHp = 100, playerShield = 100, playerMaxShield = 100;
+let bombs = 1, lives = 3, currentRunScrap = 0, combo = 1, comboTimer = 0, heat = 0, overheated = false;
 
-// Player Stats & Progression
-let playerHp = 100, playerMaxHp = 100;
-let playerShield = 100, playerMaxShield = 100;
-let bombs = 1, lives = 3, currentRunScrap = 0; 
-let combo = 1, comboTimer = 0;
-let heat = 0, overheated = false;
-
-// Input & Arrays
+// Input & Standard 2D Arrays
 let keys = {}; let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown: false };
 let selectedShipType = "xwing", currentPlayerName = "AAA";
-let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [];
-let floatingTexts = [], scrapDrops = [];
+let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [], floatingTexts = [], scrapDrops = [];
 let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
 let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
-// --- 8-BIT AUDIO SYNTHESIZER ---
+// --- 1ST PERSON 3D STATE VARIABLES ---
+let is3DMode = false;
+let levelTimer3D = 0;
+const FOV = 400;
+let camX = 0, camY = 0;
+let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
+// Generate persistent 3D stars
+for(let i=0; i<250; i++) stars3D.push({x: (Math.random()-0.5)*5000, y: (Math.random()-0.5)*5000, z: Math.random()*3000});
+
+// --- AUDIO ---
 let audioCtx;
 function initAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {} }
 function playSfx(type) {
@@ -106,7 +101,6 @@ function playSfx(type) {
         else if (type === 'powerup') { osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); osc.frequency.linearRampToValueAtTime(800, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.2); osc.start(now); osc.stop(now + 0.2); } 
         else if (type === 'hit') { osc.type = 'square'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(100, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
         else if (type === 'nuke') { osc.type = 'square'; osc.frequency.setValueAtTime(50, now); osc.frequency.linearRampToValueAtTime(20, now + 1.5); gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0, now + 1.5); osc.start(now); osc.stop(now + 1.5); }
-        else if (type === 'glitch') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(600, now); osc.frequency.linearRampToValueAtTime(100, now + 0.2); gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 0.2); osc.start(now); osc.stop(now + 0.2); }
         else if (type === 'scrap') { osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.linearRampToValueAtTime(1200, now + 0.05); gain.gain.setValueAtTime(0.05, now); gain.gain.linearRampToValueAtTime(0, now + 0.05); osc.start(now); osc.stop(now + 0.05); }
     } catch (e) {} 
 }
@@ -122,9 +116,7 @@ function spawnText(x, y, text, color = "#fff", size = 16) {
     floatingTexts.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size });
 }
 function spawnScrap(x, y, amount) {
-    for(let i=0; i<amount; i++) {
-        scrapDrops.push({ x: x, y: y, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 });
-    }
+    for(let i=0; i<amount; i++) scrapDrops.push({ x: x, y: y, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 });
 }
 
 // --- UI LISTENERS ---
@@ -140,10 +132,15 @@ if (quitBtn) { const quitAction = (e) => { e.preventDefault(); initAudio(); if (
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
-    bombs--; playSfx('nuke'); nukeFlash = 1.0; shake = 30; enemyBullets = []; 
-    targets.forEach(t => { 
-        if (t.hp !== undefined) { t.hp -= 50; spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; 
-    });
+    bombs--; playSfx('nuke'); nukeFlash = 1.0; shake = 30; 
+    
+    if (is3DMode) {
+        enemyBullets3D = [];
+        targets3D.forEach(t => t.hp = -1);
+    } else {
+        enemyBullets = []; 
+        targets.forEach(t => { if (t.hp !== undefined) { t.hp -= 50; spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; });
+    }
     updateUI();
 }
 
@@ -175,7 +172,6 @@ if (fireBtn) { fireBtn.addEventListener("touchstart", (e) => { e.preventDefault(
 if (bombBtn) { bombBtn.addEventListener("touchstart", (e) => { e.preventDefault(); bombBtn.classList.add("active"); triggerNuke(); }, { passive: false }); bombBtn.addEventListener("touchend", () => bombBtn.classList.remove("active")); }
 if (pauseBtn) { const pauseBtnAction = (e) => { if(e) e.preventDefault(); togglePause(); }; pauseBtn.addEventListener("touchstart", pauseBtnAction, { passive: false }); pauseBtn.addEventListener("mousedown", pauseBtnAction); }
 
-// --- BOOT ---
 loadSaveData();
 
 function applyGlow(ctx, color, blur) { ctx.shadowBlur = blur; ctx.shadowColor = color; }
@@ -301,13 +297,7 @@ const ShipDesigns = {
         }
     },
     nebuchadnezzar: { name: "NEBUCHADNEZZAR", laserColor: "#00ffff", stats: { thrust: 5, fric: 0.94, fireRate: 0.35, heat: 18 },
-        fire: () => { 
-            let b = createBolt(0, 11);
-            b.isEmpBolt = true;
-            b.r = 6;
-            bullets.push(b);
-            playSfx('shoot');
-        },
+        fire: () => { let b = createBolt(0, 11); b.isEmpBolt = true; b.r = 6; bullets.push(b); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             let hullGrad = ctx.createLinearGradient(-r, 0, r, 0); hullGrad.addColorStop(0, "#111519"); hullGrad.addColorStop(1, "#333b44");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.fillRect(-r, -r*0.3, r*1.5, r*0.6); ctx.strokeRect(-r, -r*0.3, r*1.5, r*0.6);
@@ -338,13 +328,7 @@ const ShipDesigns = {
         }
     },
     fsociety: { name: "FSOCIETY", laserColor: "#00ff00", stats: { thrust: 6, fric: 0.97, fireRate: 0.18, heat: 9 },
-        fire: () => { 
-            let b = createBolt(0, 13); 
-            b.isHack = true; 
-            b.r = 5; 
-            bullets.push(b); 
-            playSfx('shoot'); 
-        }, 
+        fire: () => { let b = createBolt(0, 13); b.isHack = true; b.r = 5; bullets.push(b); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             let gx = (Math.random()-0.5)*4; let gy = (Math.random()-0.5)*4; 
             ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 1;
@@ -425,93 +409,53 @@ const TargetDesigns = {
     asteroid: {
         draw: (ctx, r, t) => {
             let pts = t.vertices;
-
-            // 1. Create the base polygonal path
-            ctx.beginPath();
-            ctx.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
-            ctx.closePath();
-
-            // 2. Set clipping mask for internal shading
-            ctx.save();
-            ctx.clip();
-
-            // 3. Base Rock Color
-            ctx.fillStyle = "#5c5346"; 
-            ctx.fill();
-
-            // 4. Volumetric Light/Shadow Gradient (Simulates 3D sphere lighting)
+            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } ctx.closePath();
+            ctx.save(); ctx.clip();
+            ctx.fillStyle = "#5c5346"; ctx.fill();
             let volGrad = ctx.createLinearGradient(-r, -r, r, r);
-            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)"); // Highlight
-            volGrad.addColorStop(0.4, "rgba(255, 255, 255, 0)");  // Midtone
-            volGrad.addColorStop(0.7, "rgba(0, 0, 0, 0.5)");      // Core shadow
-            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");        // Deep shadow
-            ctx.fillStyle = volGrad;
-            ctx.fill();
-
-            // 5. Draw 3D Facets / Ridges
-            let cx = -r * 0.2; let cy = -r * 0.2; // Visual center offset to light source
+            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)"); volGrad.addColorStop(0.4, "rgba(255, 255, 255, 0)"); volGrad.addColorStop(0.7, "rgba(0, 0, 0, 0.5)"); volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");
+            ctx.fillStyle = volGrad; ctx.fill();
+            let cx = -r * 0.2; let cy = -r * 0.2; 
             ctx.lineWidth = 1.5;
             for (let i = 0; i < pts.length; i++) {
-                if (i % 2 === 0) { // Only draw some ridges to make it look chunky
+                if (i % 2 === 0) {
                     ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(cx, cy);
                     let angle = Math.atan2(pts[i].y, pts[i].x);
-                    // Dynamically shade the ridge based on its angle to the "light"
-                    ctx.strokeStyle = (angle > -Math.PI*0.75 && angle < Math.PI*0.25) ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.15)";
-                    ctx.stroke();
+                    ctx.strokeStyle = (angle > -Math.PI*0.75 && angle < Math.PI*0.25) ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.15)"; ctx.stroke();
                 }
             }
-
-            // 6. Draw Realistic Craters
             if (t.craters) {
                 t.craters.forEach(c => {
-                    // Crater depth (inverted lighting)
                     let craterGrad = ctx.createLinearGradient(c.x - c.r, c.y - c.r, c.x + c.r, c.y + c.r);
-                    craterGrad.addColorStop(0, "rgba(0,0,0,0.8)");
-                    craterGrad.addColorStop(1, "rgba(255,255,255,0.1)");
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-                    ctx.fillStyle = craterGrad; ctx.fill();
-
-                    // Lit Rim
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.75, Math.PI * 1.75);
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = r > 20 ? 2 : 1; ctx.stroke();
-
-                    // Shadowed Rim
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.25, Math.PI * 0.75);
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.stroke();
+                    craterGrad.addColorStop(0, "rgba(0,0,0,0.8)"); craterGrad.addColorStop(1, "rgba(255,255,255,0.1)");
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = craterGrad; ctx.fill();
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.75, Math.PI * 1.75); ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = r > 20 ? 2 : 1; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.25, Math.PI * 0.75); ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.stroke();
                 });
             }
             ctx.restore();
-
-            // 7. Hard Outer Outline
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
-            ctx.closePath();
-            ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.closePath(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
         }
     }
 };
 
 function startGame(shipId) {
-    let nameVal = "AAA"; 
-    if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); }
-    if(nameVal.length < 1) nameVal = "AAA"; 
+    let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA"; 
     currentPlayerName = nameVal; selectedShipType = shipId; 
     
     if (menuOverlay) menuOverlay.classList.add("hidden");
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
     
     score = 0; level = 1; currentRunScrap = 0;
-    
-    bombs = 1 + upgrades.bombs; 
-    playerMaxShield = 100 + (upgrades.shield * 20);
-    playerHp = playerMaxHp; playerShield = playerMaxShield; 
-    
-    combo = 1; comboTimer = 0; heat = 0; overheated = false;
-    multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
+    bombs = 1 + upgrades.bombs; playerMaxShield = 100 + (upgrades.shield * 20); playerHp = playerMaxHp; playerShield = playerMaxShield; 
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
+    targets3D = []; bullets3D = []; enemyBullets3D = [];
     
     updateUI(); startLevel(); gameState = "PLAYING"; 
 }
@@ -520,12 +464,22 @@ function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
     
+    is3DMode = (level % 7 === 0);
+
+    if (is3DMode) {
+        levelTimer3D = 30; // Survive for 30s
+        targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0;
+        spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40);
+        spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
+        return;
+    }
+    
     let diffMult = 1.0; let speedMult = 1.0;
     if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; }
     else if (gameDifficulty === "hard") { diffMult = 1.5; speedMult = 1.3; }
     let speedMod = speedMult + (level * 0.1 * speedMult);
 
-    if (level % 5 === 0) {
+    if (level % 5 === 0 && !is3DMode) {
         if (level % 15 === 0) {
             let numSentinels = Math.floor(40 * diffMult);
             for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
@@ -559,16 +513,8 @@ function startLevel() {
 
 function generateJaggedAsteroid(r) {
     let vertices = []; let numPoints = 8 + Math.floor(Math.random() * 5);
-    for(let i=0; i<numPoints; i++) { 
-        let angle = (i / numPoints) * Math.PI * 2; 
-        let dist = r * (0.75 + Math.random() * 0.35); // Chunkier rocks
-        vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); 
-    }
-    let craters = []; 
-    if (r > 20) {
-        craters.push({ x: (Math.random()-0.5)*r*0.5, y: (Math.random()-0.5)*r*0.5, r: r*0.2 + Math.random()*r*0.1 });
-        if (Math.random() > 0.5) craters.push({ x: (Math.random()-0.5)*r*0.6, y: (Math.random()-0.5)*r*0.6, r: r*0.1 + Math.random()*r*0.1 });
-    }
+    for(let i=0; i<numPoints; i++) { let angle = (i / numPoints) * Math.PI * 2; let dist = r * (0.75 + Math.random() * 0.35); vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); }
+    let craters = []; if (r > 20) { craters.push({ x: (Math.random()-0.5)*r*0.5, y: (Math.random()-0.5)*r*0.5, r: r*0.2 + Math.random()*r*0.1 }); if (Math.random() > 0.5) craters.push({ x: (Math.random()-0.5)*r*0.6, y: (Math.random()-0.5)*r*0.6, r: r*0.1 + Math.random()*r*0.1 }); }
     return { vertices, craters };
 }
 
@@ -583,9 +529,21 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     targets.push(t);
 }
 
+function spawnTarget3D() {
+    let isShip = Math.random() < 0.3; let type = isShip ? "tie_fighter" : "asteroid";
+    let r = isShip ? 20 : 40 + Math.random() * 40;
+    let t = {
+        type: type, x: camX + (Math.random() - 0.5) * 4000, y: camY + (Math.random() - 0.5) * 4000, z: 4000,
+        r: r, vx: (Math.random() - 0.5) * 200, vy: (Math.random() - 0.5) * 200, vz: 800 + Math.random() * 400 + (level * 20),
+        angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 2, hp: isShip ? 1 : 2
+    };
+    if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(r));
+    if (type === "tie_fighter") t.fireTimer = 1.0 + Math.random() * 2.0;
+    targets3D.push(t);
+}
+
 function spawnPowerup() {
-    let rand = Math.random();
-    let type = 'M'; if (rand > 0.4) type = 'S'; if (rand > 0.7) type = 'H'; if (rand > 0.9) type = 'B';
+    let rand = Math.random(); let type = 'M'; if (rand > 0.4) type = 'S'; if (rand > 0.7) type = 'H'; if (rand > 0.9) type = 'B';
     powerups.push({ x: Math.random() * canvas.width, y: -20, xv: (Math.random() - 0.5) * 2, yv: 1 + Math.random(), r: 15, angle: 0, type: type });
     powerupSpawnedThisLevel = true;
 }
@@ -596,7 +554,10 @@ let lastTime = performance.now();
 function loop(timestamp) {
     let dt = (timestamp - lastTime) / 1000; if (dt > 0.1 || isNaN(dt)) dt = 0.016; lastTime = timestamp; frames++;
     
-    if (gameState === "PLAYING") { update(dt); } 
+    if (gameState === "PLAYING") { 
+        if (is3DMode) update3D(dt); 
+        else update(dt); 
+    } 
     else if (gameState === "LEVEL_TRANSITION") { hyperspace += dt; ship.x += 1000 * dt; if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } } 
     else if (gameState === "MENU") {
         targets.forEach(t => { 
@@ -605,45 +566,145 @@ function loop(timestamp) {
             wrap(t); 
         });
     }
-    render(); requestAnimationFrame(loop);
+    
+    if (is3DMode && gameState === "PLAYING") render3D(); 
+    else render(); 
+    
+    requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop); 
 
 function updateUI() {
     if(scoreEl) scoreEl.innerText = score; if(levelEl) levelEl.innerText = level; 
     if(hpEl) hpEl.innerText = Math.ceil(playerHp); if(shEl) shEl.innerText = Math.ceil(playerShield);
-    if(bombEl) bombEl.innerText = bombs;
-    if(comboEl) comboEl.innerText = combo + "x";
-    if(scrapEl) scrapEl.innerText = currentRunScrap;
+    if(bombEl) bombEl.innerText = bombs; if(comboEl) comboEl.innerText = combo + "x"; if(scrapEl) scrapEl.innerText = currentRunScrap;
     
     if(heatEl) {
         heatEl.innerText = Math.ceil(heat) + "%";
-        if(overheated) heatEl.style.color = "#ff0000";
-        else if (heat > 75) heatEl.style.color = "#ff5500";
-        else heatEl.style.color = "#ffff00";
+        if(overheated) heatEl.style.color = "#ff0000"; else if (heat > 75) heatEl.style.color = "#ff5500"; else heatEl.style.color = "#ffff00";
     }
-    
     let pTxt = ""; if(multishotTimer > 0) pTxt += `[MULTI ${Math.ceil(multishotTimer)}s]`;
     if(powerupEl) { powerupEl.innerText = pTxt || "NONE"; powerupEl.style.color = (multishotTimer > 0 ? "#ff00ff" : "#33ccff"); }
 }
 
 function damagePlayer(amt) {
     if (invulnTimer > 0 || gameState !== "PLAYING") return;
-    playSfx('hit'); shake += 5; spawnParticles(ship.x, ship.y, "#ffaa00", 10);
-    spawnText(ship.x, ship.y, `-${amt}`, "#ff3333", 20);
+    playSfx('hit'); shake += 5; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
+    spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
     combo = 1; comboTimer = 0; 
     
-    if (playerShield > 0) { playerShield -= amt; if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x, ship.y-20, "SHIELD BROKEN", "#00ffff", 14); } } 
+    if (playerShield > 0) { playerShield -= amt; if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x || canvas.width/2, (ship.y || canvas.height/2)-20, "SHIELD BROKEN", "#00ffff", 14); } } 
     else { playerHp -= amt; }
     
     if (playerHp <= 0) {
-        playSfx('boom'); shake = 20; spawnParticles(ship.x, ship.y, "#ff3300", 50); multishotTimer = 0;
+        playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
         if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
         else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; }
     }
     updateUI();
 }
 
+// --- 3D UPDATE LOOP ---
+function update3D(dt) {
+    if (invulnTimer > 0) invulnTimer -= dt;
+    if (nukeFlash > 0) nukeFlash -= dt * 2;
+    if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 1; updateUI(); }
+    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } else { heat -= 20 * dt; if (heat < 0) heat = 0; }
+
+    let stats = ShipDesigns[selectedShipType].stats;
+    let speed = stats.thrust * 100 * (1 + (upgrades.speed * 0.05));
+    if (keys["ArrowUp"] || keys["KeyW"]) camY -= speed * dt;
+    if (keys["ArrowDown"] || keys["KeyS"]) camY += speed * dt;
+    if (keys["ArrowLeft"] || keys["KeyA"]) camX -= speed * dt;
+    if (keys["ArrowRight"] || keys["KeyD"]) camX += speed * dt;
+    
+    camX = Math.max(-3000, Math.min(3000, camX));
+    camY = Math.max(-3000, Math.min(3000, camY));
+
+    if (fireCooldown > 0) fireCooldown -= dt;
+    if ((keys["Space"] || mouse.leftDown) && fireCooldown <= 0 && !overheated) {
+        playSfx('shoot');
+        let vx = ((mouse.x - canvas.width/2) / FOV) * 3000;
+        let vy = ((mouse.y - canvas.height/2) / FOV) * 3000;
+        
+        let c = ShipDesigns[selectedShipType].laserColor;
+        bullets3D.push({ x: camX, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
+        if (multishotTimer>0) {
+            bullets3D.push({ x: camX - 30, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
+            bullets3D.push({ x: camX + 30, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
+        }
+        
+        fireCooldown = stats.fireRate; heat += stats.heat; 
+        if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(canvas.width/2, canvas.height/2+50, "OVERHEAT", "#ff0000", 18); }
+        updateUI();
+    }
+    
+    if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
+
+    levelTimer3D -= dt;
+    if (levelTimer3D > 0) {
+        let spawnRate = 0.03 + (level * 0.002);
+        if (Math.random() < spawnRate) spawnTarget3D();
+    } else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
+        totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData();
+        level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
+        return;
+    }
+
+    for(let i = floatingTexts.length-1; i>=0; i--) { let t = floatingTexts[i]; t.y -= 30 * dt; t.life -= dt * 1.5; if(t.life <= 0) floatingTexts.splice(i, 1); }
+
+    for(let i=bullets3D.length-1; i>=0; i--) {
+        let b = bullets3D[i]; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt;
+        if (b.z > 4000) bullets3D.splice(i, 1);
+    }
+    
+    for(let i=enemyBullets3D.length-1; i>=0; i--) {
+        let b = enemyBullets3D[i]; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt;
+        if (b.z < 10) {
+            if (Math.hypot(b.x - camX, b.y - camY) < 50 && invulnTimer <= 0) { damagePlayer(15); }
+            enemyBullets3D.splice(i, 1);
+        }
+    }
+
+    for(let i=targets3D.length-1; i>=0; i--) {
+        let t = targets3D[i];
+        t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
+        if (t.hitFlash > 0) t.hitFlash -= dt;
+
+        if (t.type === "tie_fighter") {
+            t.fireTimer -= dt;
+            if (t.fireTimer <= 0) {
+                enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.5, vy: (camY - t.y)*0.5, vz: -1000 });
+                t.fireTimer = 2.0; playSfx('enemyShoot');
+            }
+        }
+
+        if (t.z < 50 && t.z > -50) {
+            if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; }
+        }
+        if (t.z < -100) { targets3D.splice(i, 1); continue; }
+
+        let hit = false;
+        for(let j=bullets3D.length-1; j>=0; j--) {
+            let b = bullets3D[j];
+            if (Math.abs(b.z - t.z) < 150 && Math.hypot(b.x - t.x, b.y - t.y) < t.r + 20) {
+                let dmg = b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1);
+                t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit');
+                spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff");
+                bullets3D.splice(j, 1);
+                if (t.hp <= 0) {
+                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0;
+                    score += 50 * combo; currentRunScrap += 2; updateUI();
+                    hit = true; break;
+                }
+            }
+        }
+        if (hit) targets3D.splice(i, 1);
+    }
+    stars3D.forEach(s => { s.z -= 1500 * dt; if (s.z < 10) { s.z = 3000; s.x = camX + (Math.random()-0.5)*4000; s.y = camY + (Math.random()-0.5)*4000; } });
+}
+
+// --- 2D UPDATE LOOP ---
 function update(dt) {
     let stats = ShipDesigns[selectedShipType].stats;
     ship.angle = Math.atan2(mouse.y - ship.y, mouse.x - ship.x);
@@ -673,16 +734,13 @@ function update(dt) {
     if (fireCooldown > 0) fireCooldown -= dt;
     if ((keys["Space"] || mouse.leftDown) && fireCooldown <= 0 && !overheated) {
         if (multishotTimer > 0) {
-            let b1 = createBolt(-0.15);
-            let b2 = createBolt(0.15);
+            let b1 = createBolt(-0.15); let b2 = createBolt(0.15);
             if (selectedShipType === 'fsociety') { b1.isHack = true; b1.r = 5; b2.isHack = true; b2.r = 5; }
             if (selectedShipType === 'nebuchadnezzar') { b1.isEmpBolt = true; b1.r = 6; b2.isEmpBolt = true; b2.r = 6; }
-            bullets.push(b1);
-            bullets.push(b2);
+            bullets.push(b1); bullets.push(b2);
         }
         ShipDesigns[selectedShipType].fire(); 
-        fireCooldown = stats.fireRate;
-        heat += stats.heat; 
+        fireCooldown = stats.fireRate; heat += stats.heat; 
         if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(ship.x, ship.y-20, "OVERHEAT", "#ff0000", 18); }
         updateUI();
     }
@@ -777,25 +835,11 @@ function update(dt) {
             }
 
             if (Math.hypot(bullets[i].x - t.x, bullets[i].y - t.y) < (t.r + (bullets[i].r || 2))) {
-                if (bullets[i].isHack && t.type !== "asteroid") {
-                    t.stunned = 3.0; 
-                    spawnText(t.x, t.y, "HACKED", "#0f0", 14);
-                }
-                if (bullets[i].isEmpBolt) {
-                    spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10);
-                }
+                if (bullets[i].isHack && t.type !== "asteroid") { t.stunned = 3.0; spawnText(t.x, t.y, "HACKED", "#0f0", 14); }
+                if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
                 
                 playSfx('hit');
-                if (t.hp !== undefined && t.hp > dmg) { 
-                    t.hp -= dmg; 
-                    t.hitFlash = 0.1; 
-                    score += 25 * combo; 
-                    spawnText(t.x, t.y, `-${dmg}`, "#fff"); 
-                    updateUI(); 
-                    hit = true; 
-                    spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); 
-                    break; 
-                }
+                if (t.hp !== undefined && t.hp > dmg) { t.hp -= dmg; t.hitFlash = 0.1; score += 25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; }
                 
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
                 spawnParticles(t.x, t.y, t.type==="asteroid" ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
@@ -833,13 +877,81 @@ function update(dt) {
     }
 }
 
+// --- 3D RENDER LOOP ---
+function render3D() {
+    ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+
+    let CX = canvas.width/2, CY = canvas.height/2;
+
+    ctx.fillStyle = "#fff";
+    stars3D.forEach(s => {
+        if (s.z < 10) return;
+        let scale = FOV / s.z; let sx = (s.x - camX) * scale + CX; let sy = (s.y - camY) * scale + CY;
+        ctx.globalAlpha = Math.min(1, scale * 5); ctx.fillRect(sx, sy, scale*3, scale*3);
+    });
+    ctx.globalAlpha = 1.0;
+
+    let renderList = [...targets3D].sort((a,b) => b.z - a.z);
+
+    bullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, b.color, 15); ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(sx, sy, b.r * scale * 2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    });
+
+    enemyBullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, "#f00", 15); ctx.fillStyle = "#f55";
+        ctx.fillRect(sx - 3*scale, sy - 3*scale, 6*scale, 6*scale); clearGlow(ctx);
+    });
+
+    renderList.forEach(t => {
+        if (t.z < 10) return;
+        let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
+        ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
+        ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
+        if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
+        else { if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); else TargetDesigns.asteroid.draw(ctx, t.r, t); }
+        ctx.restore();
+    });
+
+    // 1st Person HUD Overlay
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
+    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
+    ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
+    
+    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
+    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, 40);
+    
+    if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    
+    ctx.textAlign = "center";
+    floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
+    
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+
+    if (!isTouchDevice) {
+        ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
+        ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
+        ctx.restore();
+    }
+    ctx.restore();
+    drawMenuOverlays();
+}
+
+// --- STANDARD 2D RENDER LOOP ---
 function render() {
     ctx.fillStyle = `hsl(${level * 15}, 30%, 5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
     if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
 
-    // --- 3D PARALLAX STARFIELD ---
     ctx.fillStyle = "white";
     for(let i=0; i<100; i++) { 
         let layer = (i%3) + 1; let spdMult = layer * 0.5;
@@ -849,7 +961,6 @@ function render() {
         else { ctx.globalAlpha = layer * 0.3; ctx.fillRect(Math.abs(sx), Math.abs(sy), layer, layer); ctx.globalAlpha = 1.0; }
     }
 
-    // --- OFF-SCREEN THREAT INDICATORS ---
     if (gameState === "PLAYING") {
         targets.forEach(t => {
             if (t.type.startsWith("boss") || t.type === "tie_advanced" || t.type === "sentinel") {
@@ -892,28 +1003,11 @@ function render() {
     applyGlow(ctx, "#ff0000", 15); ctx.fillStyle = "#ff5555";
     enemyBullets.forEach(b => { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); ctx.fillRect(-6, -2, 12, 4); ctx.restore(); }); clearGlow(ctx);
 
-    // --- PLAYER PROJECTILE RENDERING ---
     bullets.forEach(b => { 
         ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); 
-        if (b.isHack) {
-            applyGlow(ctx, "#00ff00", 12);
-            ctx.fillStyle = "#00ff00";
-            ctx.font = "bold 14px Courier New";
-            ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4);
-            clearGlow(ctx);
-        } else if (b.isEmpBolt) {
-            applyGlow(ctx, "#00ffff", 15);
-            ctx.fillStyle = "#ffffff";
-            ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill();
-            ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke();
-            clearGlow(ctx);
-        } else {
-            ctx.fillStyle = ShipDesigns[selectedShipType].laserColor; 
-            applyGlow(ctx, ShipDesigns[selectedShipType].laserColor, 10);
-            ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); 
-            clearGlow(ctx);
-        }
+        if (b.isHack) { applyGlow(ctx, "#00ff00", 12); ctx.fillStyle = "#00ff00"; ctx.font = "bold 14px Courier New"; ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4); clearGlow(ctx); } 
+        else if (b.isEmpBolt) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke(); clearGlow(ctx); } 
+        else { ctx.fillStyle = ShipDesigns[selectedShipType].laserColor; applyGlow(ctx, ShipDesigns[selectedShipType].laserColor, 10); ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); clearGlow(ctx); }
         ctx.restore(); 
     });
 
@@ -925,13 +1019,11 @@ function render() {
         }
     }
     
-    // Render Floating Text
     ctx.textAlign = "center";
     floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
     
     if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
     
-    // --- CUSTOM CROSSHAIR ---
     if (gameState === "PLAYING" && !isTouchDevice) {
         ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
         ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
@@ -940,7 +1032,10 @@ function render() {
     }
 
     ctx.restore();
+    drawMenuOverlays();
+}
 
+function drawMenuOverlays() {
     ctx.textAlign = "center";
     if (gameState === "PAUSED") { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#fff"; ctx.font = "bold 40px Courier New"; ctx.fillText("PAUSED", canvas.width/2, canvas.height/2); }
     if (gameState === "LEVEL_TRANSITION") { ctx.fillStyle = `rgba(0,0,0,${1 - hyperspace/2})`; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#33ccff"; ctx.font = "bold 40px Courier New"; ctx.fillText("JUMPING TO SECTOR " + level, canvas.width/2, canvas.height/2); }
