@@ -424,23 +424,70 @@ const TargetDesigns = {
     tie_fighter: { draw: (ctx, r) => { ShipDesigns.tiefighter.draw(ctx, r, false); } },
     asteroid: {
         draw: (ctx, r, t) => {
-            let astGrad = ctx.createRadialGradient(r*0.3, -r*0.3, r*0.1, 0, 0, r); 
-            astGrad.addColorStop(0, "#9a9283");
-            astGrad.addColorStop(0.4, "#4a4233");
-            astGrad.addColorStop(1, "#1a1814");
-            
-            ctx.fillStyle = astGrad; ctx.strokeStyle = "#5b503e"; ctx.lineWidth = 1.5; ctx.lineJoin = "round"; ctx.lineCap = "round";
-            ctx.beginPath(); let pts = t.vertices; let midX = (pts[0].x + pts[pts.length-1].x) / 2; let midY = (pts[0].y + pts[pts.length-1].y) / 2; ctx.moveTo(midX, midY);
-            for(let i=0; i<pts.length; i++) { let nextPt = pts[(i+1)%pts.length]; let nxMid = (pts[i].x + nextPt.x) / 2; let nyMid = (pts[i].y + nextPt.y) / 2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, nxMid, nyMid); }
-            ctx.closePath(); ctx.fill(); ctx.stroke(); 
-            ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(pts[0].x*0.5, pts[0].y*0.5); ctx.quadraticCurveTo(0, 0, pts[2].x*0.5, pts[2].y*0.5); ctx.stroke();
+            let pts = t.vertices;
+
+            // 1. Create the base polygonal path
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
+            ctx.closePath();
+
+            // 2. Set clipping mask for internal shading
+            ctx.save();
+            ctx.clip();
+
+            // 3. Base Rock Color
+            ctx.fillStyle = "#5c5346"; 
+            ctx.fill();
+
+            // 4. Volumetric Light/Shadow Gradient (Simulates 3D sphere lighting)
+            let volGrad = ctx.createLinearGradient(-r, -r, r, r);
+            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)"); // Highlight
+            volGrad.addColorStop(0.4, "rgba(255, 255, 255, 0)");  // Midtone
+            volGrad.addColorStop(0.7, "rgba(0, 0, 0, 0.5)");      // Core shadow
+            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");        // Deep shadow
+            ctx.fillStyle = volGrad;
+            ctx.fill();
+
+            // 5. Draw 3D Facets / Ridges
+            let cx = -r * 0.2; let cy = -r * 0.2; // Visual center offset to light source
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < pts.length; i++) {
+                if (i % 2 === 0) { // Only draw some ridges to make it look chunky
+                    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(cx, cy);
+                    let angle = Math.atan2(pts[i].y, pts[i].x);
+                    // Dynamically shade the ridge based on its angle to the "light"
+                    ctx.strokeStyle = (angle > -Math.PI*0.75 && angle < Math.PI*0.25) ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.15)";
+                    ctx.stroke();
+                }
+            }
+
+            // 6. Draw Realistic Craters
             if (t.craters) {
-                t.craters.forEach(c => { 
-                    let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r); craterGrad.addColorStop(0, "#111"); craterGrad.addColorStop(1, "#3a3223");
-                    ctx.fillStyle = craterGrad; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = "#0a0a0a"; ctx.lineWidth = 1.5; ctx.stroke();
-                    ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI); ctx.stroke(); 
+                t.craters.forEach(c => {
+                    // Crater depth (inverted lighting)
+                    let craterGrad = ctx.createLinearGradient(c.x - c.r, c.y - c.r, c.x + c.r, c.y + c.r);
+                    craterGrad.addColorStop(0, "rgba(0,0,0,0.8)");
+                    craterGrad.addColorStop(1, "rgba(255,255,255,0.1)");
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+                    ctx.fillStyle = craterGrad; ctx.fill();
+
+                    // Lit Rim
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.75, Math.PI * 1.75);
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = r > 20 ? 2 : 1; ctx.stroke();
+
+                    // Shadowed Rim
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.25, Math.PI * 0.75);
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.stroke();
                 });
             }
+            ctx.restore();
+
+            // 7. Hard Outer Outline
+            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
+            ctx.closePath();
+            ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
         }
     }
 };
@@ -511,9 +558,17 @@ function startLevel() {
 }
 
 function generateJaggedAsteroid(r) {
-    let vertices = []; let numPoints = 7 + Math.floor(Math.random() * 6);
-    for(let i=0; i<numPoints; i++) { let angle = (i / numPoints) * Math.PI * 2; let dist = r * (0.7 + Math.random() * 0.4); vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); }
-    let craters = []; if (r > 20) craters.push({ x: (Math.random()-0.5)*r*0.6, y: (Math.random()-0.5)*r*0.6, r: r*0.25 });
+    let vertices = []; let numPoints = 8 + Math.floor(Math.random() * 5);
+    for(let i=0; i<numPoints; i++) { 
+        let angle = (i / numPoints) * Math.PI * 2; 
+        let dist = r * (0.75 + Math.random() * 0.35); // Chunkier rocks
+        vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); 
+    }
+    let craters = []; 
+    if (r > 20) {
+        craters.push({ x: (Math.random()-0.5)*r*0.5, y: (Math.random()-0.5)*r*0.5, r: r*0.2 + Math.random()*r*0.1 });
+        if (Math.random() > 0.5) craters.push({ x: (Math.random()-0.5)*r*0.6, y: (Math.random()-0.5)*r*0.6, r: r*0.1 + Math.random()*r*0.1 });
+    }
     return { vertices, craters };
 }
 
@@ -757,7 +812,7 @@ function update(dt) {
                 targets.splice(j, 1); hit = true; break;
             }
         }
-        if (hit) { bullets.splice(i, 1); updateUI(); }
+        if (hit && !bullets[i].isEmp) { bullets.splice(i, 1); updateUI(); }
     }
 
     if (invulnTimer <= 0) {
