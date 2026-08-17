@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Fandoms Collide</title>
+    <style>
+        body {
+            background-color: #050505; color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex; align-items: center; justify-content: center;
+            height: 100vh; margin: 0; overflow: hidden;
+        }
+        #gameWrapper { display: flex; gap: 20px; align-items: flex-start; }
+        #gameColumn { display: flex; flex-direction: column; }
+        canvas {
+            border: 2px solid #444; box-shadow: 0 0 30px rgba(0, 150, 255, 0.2);
+            background-color: #000; cursor: crosshair; touch-action: none;
+        }
+
+        /* Touch Controls (mobile) */
+        #touchControls { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        body.touch-device #touchControls { display: block; }
+        #joystickZone {
+            position: absolute; left: 20px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(51, 204, 255, 0.4);
+            pointer-events: auto; touch-action: none;
+        }
+        #joystickThumb {
+            position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+            background: rgba(51, 204, 255, 0.5); border: 2px solid #33ccff; pointer-events: none;
+        }
+        #fireBtn {
+            position: absolute; right: 20px; bottom: 20px; width: 90px; height: 90px; border-radius: 50%;
+            background: rgba(255, 51, 51, 0.2); border: 2px solid #ff3333; color: #ff3333;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;
+            pointer-events: auto; touch-action: none; user-select: none;
+        }
+        #bombBtn {
+            position: absolute; right: 130px; bottom: 20px; width: 60px; height: 60px; border-radius: 50%;
+            background: rgba(255, 204, 0, 0.2); border: 2px solid #ffcc00; color: #ffcc00;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;
+            pointer-events: auto; touch-action: none; user-select: none;
+        }
+        #fireBtn.active { background: rgba(255, 51, 51, 0.5); }
+        #bombBtn.active { background: rgba(255, 204, 0, 0.5); }
+        
+        #pauseBtn {
+            position: absolute; top: 12px; right: 12px; width: 44px; height: 34px; border-radius: 6px;
+            background: rgba(255, 204, 0, 0.15); border: 2px solid #ffcc00; color: #ffcc00;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
+            pointer-events: auto; touch-action: none; user-select: none; cursor: pointer;
+        }
+
+        #ui {
+            margin-bottom: 10px; font-size: 14px; font-weight: bold;
+            color: #ffcc00; letter-spacing: 1px; width: 800px;
+            display: flex; justify-content: space-between;
+        }
+        .status-text { color: #33ccff; }
+        .hp-text { color: #33ff33; }
+        .sh-text { color: #00ffff; }
+        
+        /* Sidebar Styles */
+        #sidebar {
+            width: 260px; background-color: #0a0a0a; border: 2px solid #444;
+            border-radius: 8px; padding: 20px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.1);
+            box-sizing: border-box;
+        }
+        #sidebar h2 { color: #ffcc00; text-align: center; border-bottom: 1px dashed #555; padding-bottom: 10px; margin-top: 0; letter-spacing: 2px; }
+        .control-item { margin-bottom: 18px; }
+        .control-key { display: inline-block; background: #222; color: #fff; border: 1px solid #ffcc00; padding: 4px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        .control-desc { color: #ccc; font-size: 14px; line-height: 1.4; margin-left: 5px; }
+        .powerup-note { margin-top: 25px; padding-top: 15px; border-top: 1px dashed #555; color: #aaa; font-size: 13px; text-align: center; font-weight: bold; line-height: 1.6; }
+        .powerup-note span { display: inline-block; margin: 2px; padding: 2px 6px; border-radius: 3px; color: #000; }
+
+        /* Overlay Styles */
+        .overlay {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95); border: 2px solid #ffcc00; padding: 25px;
+            text-align: center; border-radius: 10px; box-shadow: 0 0 20px #ffcc00; z-index: 10;
+            box-sizing: border-box;
+        }
+        #menuOverlay { width: 500px; }
+        #pauseOverlay { width: 320px; border-color: #33ccff; box-shadow: 0 0 20px rgba(51, 204, 255, 0.5); z-index: 20; }
+        
+        .overlay h1 { margin-top: 0; margin-bottom: 10px; text-transform: uppercase; }
+        #menuOverlay h1 { color: #ffcc00; }
+        #pauseOverlay h1 { color: #33ccff; margin-bottom: 25px; }
+
+        .input-group { margin-bottom: 15px; }
+        #playerName {
+            font-size: 24px; text-align: center; width: 80px; background: #222;
+            color: #fff; border: 1px solid #ffcc00; text-transform: uppercase; font-family: inherit;
+        }
+        
+        /* Difficulty Buttons */
+        .diff-group { display: flex; gap: 5px; margin-bottom: 15px; }
+        .diff-btn {
+            flex: 1; background: #111; color: #888; border: 1px solid #444;
+            padding: 8px; font-size: 12px; font-weight: bold; font-family: inherit;
+            cursor: pointer; transition: 0.2s; border-radius: 4px;
+        }
+        .diff-btn:hover { background: #222; color: #fff; }
+        .diff-btn.active { background: #ffcc00; color: #000; border-color: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.5); }
+
+        .ship-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px;
+            max-height: 250px; overflow-y: auto; padding-right: 5px;
+        }
+        .ship-grid::-webkit-scrollbar { width: 6px; }
+        .ship-grid::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        
+        .ship-btn {
+            background: #222; color: white; border: 1px solid #555; padding: 10px 5px;
+            font-size: 12px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase;
+        }
+        .ship-btn:hover { background: #ffcc00; color: black; border-color: white; }
+        
+        .pause-btn-wrap .ship-btn { width: 100%; margin-bottom: 10px; padding: 12px; font-size: 15px; font-weight: bold; }
+        .danger-btn { background: rgba(255, 51, 51, 0.1); border-color: #ff3333; color: #ff3333; }
+        .danger-btn:hover { background: #ff3333; color: white; border-color: white; }
+        .warning-btn { background: rgba(255, 153, 0, 0.1); border-color: #ff9900; color: #ff9900; }
+        .warning-btn:hover { background: #ff9900; color: white; border-color: white; }
+
+        .hidden { display: none !important; }
+        
+        #leaderboard { margin-top: 15px; border-top: 1px dashed #555; padding-top: 10px; text-align: left; }
+        #leaderboard h3 { margin: 0 0 10px 0; color: #33ccff; text-align: center; }
+        .score-row { display: flex; justify-content: space-between; font-size: 14px; color: #ddd; margin-bottom: 5px; }
+
+        @media (max-width: 880px), (pointer: coarse) {
+            html, body { overflow-x: hidden; }
+            body { height: auto; min-height: 100vh; overflow-y: auto; padding: 10px; box-sizing: border-box; }
+            #gameWrapper { flex-direction: column; align-items: center; width: 100%; }
+            #sidebar { display: none; }
+            #ui { width: 100%; max-width: 800px; font-size: 11px; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+            canvas { width: 100%; max-width: 800px; height: auto; display: block; }
+            #menuOverlay { width: min(95vw, 500px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="gameWrapper">
+        <div id="gameColumn">
+            <div id="ui">
+                <span>LVL: <span id="levelDisplay" class="status-text">1</span></span>
+                <span>HP: <span id="hpDisplay" class="hp-text">100</span> | SH: <span id="shDisplay" class="sh-text">100</span></span>
+                <span>PWR: <span id="powerupDisplay" class="status-text">NONE</span></span>
+                <span>BOMBS: <span id="bombDisplay" class="status-text">1</span></span>
+                <span>SCORE: <span id="scoreDisplay" class="status-text">0</span></span>
+            </div>
+            
+            <div style="position: relative;">
+                <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+                <div id="touchControls">
+                    <div id="joystickZone"><div id="joystickThumb"></div></div>
+                    <div id="fireBtn">FIRE</div>
+                    <div id="bombBtn">NUKE</div>
+                    <div id="pauseBtn">II</div>
+                </div>
+
+                <!-- Main Menu -->
+                <div id="menuOverlay" class="overlay">
+                    <h1>Space Fandoms Collide</h1>
+                    <div class="input-group">
+                        <label>PILOT INITIALS: </label>
+                        <input type="text" id="playerName" maxlength="3" value="AAA" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z]/g, '')">
+                    </div>
+
+                    <div id="difficultySelector" class="diff-group">
+                        <button class="diff-btn" data-diff="easy">EASY</button>
+                        <button class="diff-btn active" data-diff="moderate">MODERATE</button>
+                        <button class="diff-btn" data-diff="hard">HARD</button>
+                    </div>
+
+                    <div class="ship-grid" id="shipGrid">
+                        <button class="ship-btn" data-ship="xwing">X-Wing (Balanced)</button>
+                        <button class="ship-btn" data-ship="falcon">Falcon (Turret)</button>
+                        <button class="ship-btn" data-ship="tiefighter">TIE (Fast/Weak)</button>
+                        <button class="ship-btn" data-ship="enterprise">Enterprise (Heavy)</button>
+                        <button class="ship-btn" data-ship="apollo">Apollo (Drift)</button>
+                        <button class="ship-btn" data-ship="serenity">Serenity (Agile)</button>
+                        <button class="ship-btn" data-ship="borg">Borg Cube (360)</button>
+                        <button class="ship-btn" data-ship="pelican">Pelican (Shotgun)</button>
+                        <button class="ship-btn" data-ship="tardis">TARDIS (Sonic Wave)</button>
+                        <button class="ship-btn" data-ship="viper">Viper (Rapid)</button>
+                        <button class="ship-btn" data-ship="nebuchadnezzar">Nebuchadnezzar (EMP)</button>
+                        <button class="ship-btn" data-ship="lightship">Lightship (Trail)</button>
+                        <button class="ship-btn" data-ship="milano">Milano (Quad Blaster)</button>
+                        <button class="ship-btn" data-ship="fsociety">fsociety (Glitch Hack)</button>
+                    </div>
+
+                    <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
+                </div>
+
+                <!-- Pause Menu -->
+                <div id="pauseOverlay" class="overlay hidden">
+                    <h1>PAUSED</h1>
+                    <div class="pause-btn-wrap">
+                        <button id="resumeBtn" class="ship-btn">RESUME GAME</button>
+                        <button id="restartGameBtn" class="ship-btn warning-btn">RESTART RUN</button>
+                        <button id="quitBtn" class="ship-btn danger-btn">QUIT TO MENU</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <aside id="sidebar">
+            <h2>FLIGHT MANUAL</h2>
+            <div class="control-item"><span class="control-key">MOUSE</span><div class="control-desc">Aim Ship</div></div>
+            <div class="control-item"><span class="control-key">L-CLICK</span> / <span class="control-key">SPACE</span><div class="control-desc">Fire Weapons</div></div>
+            <div class="control-item"><span class="control-key">R-CLICK</span> / <span class="control-key">W</span><div class="control-desc">Engage Thrusters</div></div>
+            <div class="control-item"><span class="control-key">B</span><div class="control-desc">Deploy Screen Nuke</div></div>
+            <div class="control-item"><span class="control-key">P</span><div class="control-desc">Pause Game</div></div>
+            <div class="powerup-note">
+                <span style="background:#ff00ff">[M] Multi</span>
+                <span style="background:#00ffff">[S] Shield</span>
+                <span style="background:#ffcc00">[B] Bomb</span>
+                <span style="background:#33ff33">[H] Hull Fix</span>
+            </div>
+        </aside>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
