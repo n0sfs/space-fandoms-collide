@@ -8,16 +8,17 @@ const hpEl = document.getElementById("hpDisplay");
 const shEl = document.getElementById("shDisplay");
 const bombEl = document.getElementById("bombDisplay");
 const powerupEl = document.getElementById("powerupDisplay");
-const shipNameEl = document.getElementById("shipNameDisplay");
 const menuOverlay = document.getElementById("menuOverlay");
 const pauseOverlay = document.getElementById("pauseOverlay");
 const playerNameInput = document.getElementById("playerName");
 const leaderboardList = document.getElementById("leaderboardList");
 
+// Button Elements securely declared
+const shipButtons = document.querySelectorAll(".ship-grid .ship-btn");
+const diffButtons = document.querySelectorAll(".diff-btn");
 const resumeBtn = document.getElementById("resumeBtn");
 const restartGameBtn = document.getElementById("restartGameBtn");
 const quitBtn = document.getElementById("quitBtn");
-const diffButtons = document.querySelectorAll(".diff-btn");
 
 // Game State
 let gameState = "MENU"; 
@@ -70,21 +71,13 @@ function spawnParticles(x, y, color, count, speedMod = 1) {
     }
 }
 
-// --- SAFE BUTTON BINDINGS ---
-document.querySelectorAll(".ship-btn").forEach(btn => {
-    // Only target buttons that actually have a ship type assigned
-    if (btn.hasAttribute("data-ship")) {
-        const startAction = (e) => { 
-            e.preventDefault(); 
-            initAudio(); 
-            startGame(btn.dataset.ship); 
-        };
-        btn.addEventListener("click", startAction);
-        btn.addEventListener("touchstart", startAction, { passive: false });
-    }
+// --- SECURE UI LISTENERS ---
+shipButtons.forEach(btn => {
+    const startAction = (e) => { e.preventDefault(); initAudio(); startGame(btn.dataset.ship); };
+    btn.addEventListener("click", startAction);
+    btn.addEventListener("touchstart", startAction, { passive: false });
 });
 
-// --- DIFFICULTY UI ---
 function updateDifficultyUI() {
     diffButtons.forEach(b => b.classList.remove("active"));
     let activeBtn = document.querySelector(`.diff-btn[data-diff="${gameDifficulty}"]`);
@@ -97,11 +90,11 @@ diffButtons.forEach(btn => {
 });
 updateDifficultyUI();
 
-// --- PAUSE & OVERLAY BUTTONS ---
 function togglePause() {
     if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); } 
     else if (gameState === "PAUSED") { gameState = "PLAYING"; if (pauseOverlay) pauseOverlay.classList.add("hidden"); lastTime = performance.now(); }
 }
+
 if (resumeBtn) { const resumeAction = (e) => { e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
 if (quitBtn) { const quitAction = (e) => { e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
@@ -417,15 +410,25 @@ const TargetDesigns = {
 };
 
 function startGame(shipId) {
-    let nameVal = ""; if (playerNameInput) nameVal = playerNameInput.value.trim().toUpperCase(); 
-    if(nameVal.length < 1) nameVal = "AAA"; currentPlayerName = nameVal; selectedShipType = shipId; 
+    let nameVal = "AAA"; 
+    if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); }
+    if(nameVal.length < 1) nameVal = "AAA"; 
+    currentPlayerName = nameVal; 
+    selectedShipType = shipId; 
+    
     if (shipNameEl && ShipDesigns[shipId]) shipNameEl.innerText = ShipDesigns[shipId].name; 
     if (menuOverlay) menuOverlay.classList.add("hidden");
+    if (pauseOverlay) pauseOverlay.classList.add("hidden");
     
-    score = 0; level = 1; lives = 3; bombs = 1; playerHp = 100; playerShield = 100; multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0;
+    score = 0; level = 1; lives = 3; bombs = 1; playerHp = 100; playerShield = 100; 
+    multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
+    
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = [];
-    updateUI(); startLevel(); gameState = "PLAYING"; 
+    
+    updateUI(); 
+    startLevel(); 
+    gameState = "PLAYING"; 
 }
 
 function startLevel() {
@@ -498,10 +501,18 @@ for(let i=0; i<8; i++) spawnTarget("asteroid", 40, 2.0);
 
 let lastTime = performance.now();
 function loop(timestamp) {
-    let dt = (timestamp - lastTime) / 1000; if (dt > 0.1) dt = 0.016; lastTime = timestamp; frames++;
+    let dt = (timestamp - lastTime) / 1000; 
+    if (dt > 0.1 || isNaN(dt)) dt = 0.016; 
+    lastTime = timestamp; 
+    frames++;
     
-    if (gameState === "PLAYING") { update(dt); } 
-    else if (gameState === "LEVEL_TRANSITION") { hyperspace += dt; ship.x += 1000 * dt; if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } } 
+    if (gameState === "PLAYING") { 
+        update(dt); 
+    } 
+    else if (gameState === "LEVEL_TRANSITION") { 
+        hyperspace += dt; ship.x += 1000 * dt; 
+        if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } 
+    } 
     else if (gameState === "MENU") {
         targets.forEach(t => { 
             t.x += t.xv * 0.5; t.y += t.yv * 0.5; t.angle += t.rotSpeed * dt * 0.5; 
@@ -509,17 +520,25 @@ function loop(timestamp) {
             wrap(t); 
         });
     }
-    render(); requestAnimationFrame(loop);
+    
+    render(); 
+    requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop); 
 
 function updateUI() {
-    if(scoreEl) scoreEl.innerText = score; if(levelEl) levelEl.innerText = level; if(livesEl) livesEl.innerText = lives;
-    if(hpEl) hpEl.innerText = Math.ceil(playerHp); if(shEl) shEl.innerText = Math.ceil(playerShield);
+    if(scoreEl) scoreEl.innerText = score; 
+    if(levelEl) levelEl.innerText = level; 
+    if(hpEl) hpEl.innerText = Math.ceil(playerHp); 
+    if(shEl) shEl.innerText = Math.ceil(playerShield);
     if(bombEl) bombEl.innerText = bombs;
     
-    let pTxt = ""; if(multishotTimer > 0) pTxt += `[MULTI ${Math.ceil(multishotTimer)}s]`;
-    if(powerupEl) { powerupEl.innerText = pTxt || "NONE"; powerupEl.style.color = (multishotTimer > 0 ? "#ff00ff" : "#33ccff"); }
+    let pTxt = ""; 
+    if(multishotTimer > 0) pTxt += `[MULTI ${Math.ceil(multishotTimer)}s]`;
+    if(powerupEl) { 
+        powerupEl.innerText = pTxt || "NONE"; 
+        powerupEl.style.color = (multishotTimer > 0 ? "#ff00ff" : "#33ccff"); 
+    }
 }
 
 function damagePlayer(amt) {
@@ -533,8 +552,8 @@ function damagePlayer(amt) {
     
     if (playerHp <= 0) {
         playSfx('boom'); shake = 20; spawnParticles(ship.x, ship.y, "#ff3300", 50); multishotTimer = 0;
-        if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; } 
-        else { lives = 0; playerHp = 0; checkAndSaveScore(); gameState = "GAMEOVER"; }
+        if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
+        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); checkAndSaveScore(); gameState = "GAMEOVER"; }
     }
     updateUI();
 }
@@ -676,11 +695,11 @@ function update(dt) {
                 let expX = t.x, expY = t.y, expR = t.r;
                 targets.splice(j, 1); hit = true; 
                 
-                if (shieldHp > 0) {
+                if (playerShield > 0) {
                     let distToExplosion = Math.hypot(ship.x - expX, ship.y - expY);
                     if (distToExplosion < expR * 3 + ship.r) {
-                        shieldHp -= 10; 
-                        if (shieldHp < 0) shieldHp = 0;
+                        playerShield -= 10; 
+                        if (playerShield < 0) playerShield = 0;
                         shake += 2; updateUI();
                     }
                 }
