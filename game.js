@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// UI Elements 
+// UI Elements (Securely declared to prevent Reference Errors!)
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
 const hpEl = document.getElementById("hpDisplay");
@@ -429,8 +429,7 @@ const TargetDesigns = {
         draw: (ctx, r, t) => {
             let pts = t.vertices;
             
-            // Base Sand/Rock bedrock layer
-            ctx.fillStyle = "#8a7d65"; 
+            ctx.fillStyle = t.shadowColor || "#222"; 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } 
             ctx.closePath();
@@ -439,43 +438,33 @@ const TargetDesigns = {
             ctx.clip(); 
             ctx.fill();
 
-            // Underlying metallic noise & shadows
-            let baseGrad = ctx.createRadialGradient(-r*0.2, -r*0.2, 0, 0, 0, r*1.2);
-            baseGrad.addColorStop(0, "rgba(220, 220, 230, 0.4)"); 
-            baseGrad.addColorStop(0.5, "rgba(60, 50, 40, 0.6)"); 
-            baseGrad.addColorStop(1, "rgba(10, 10, 15, 0.95)"); 
-            ctx.fillStyle = baseGrad;
+            let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.2);
+            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.2)"); 
+            volGrad.addColorStop(0.5, t.baseColor || "rgba(80, 80, 80, 0.8)"); 
+            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.95)"); 
+            ctx.fillStyle = volGrad;
             ctx.fill();
 
-            // Metallic and Rock Facets 
             if (t.facets) {
                 t.facets.forEach(f => {
                     ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y); ctx.closePath();
                     ctx.fillStyle = f.color; ctx.fill();
-                    if (f.isMetallic) {
-                        ctx.strokeStyle = "rgba(255, 255, 255, 0.6)"; 
-                        ctx.lineWidth = 0.5;
-                        ctx.stroke();
-                    } else {
-                        ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
-                        ctx.lineWidth = 1;
-                        ctx.stroke();
-                    }
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
                 });
             }
 
-            // High-detail Craters
             if (t.craters) {
                 t.craters.forEach(c => {
                     let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
-                    craterGrad.addColorStop(0, "rgba(5, 5, 5, 0.95)"); 
-                    craterGrad.addColorStop(0.8, "rgba(40, 35, 30, 0.8)"); 
-                    craterGrad.addColorStop(1, "rgba(150, 140, 120, 0)"); 
+                    craterGrad.addColorStop(0, "rgba(5, 5, 5, 0.9)"); 
+                    craterGrad.addColorStop(0.8, "rgba(40, 40, 40, 0.6)"); 
+                    craterGrad.addColorStop(1, "rgba(100, 100, 100, 0)"); 
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); 
                     ctx.fillStyle = craterGrad; ctx.fill();
 
-                    // Radial striations inside crater
-                    ctx.strokeStyle = "rgba(200, 200, 200, 0.3)";
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
                     ctx.lineWidth = 0.5;
                     for(let a=0; a<Math.PI*2; a+=Math.PI/4) {
                         ctx.beginPath();
@@ -484,107 +473,34 @@ const TargetDesigns = {
                         ctx.stroke();
                     }
 
-                    // Bright metallic rim
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.8, Math.PI * 1.8); 
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
                     
-                    // Shadow rim
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.2, Math.PI * 0.8); 
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)"; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.7)"; ctx.lineWidth = 2; ctx.stroke();
                 });
             }
             ctx.restore();
 
-            // Bold outer outline 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
             ctx.closePath(); 
             ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = 1; ctx.stroke();
         }
     }
 };
 
-function startGame(shipId) {
-    let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA"; 
-    currentPlayerName = nameVal; selectedShipType = shipId; 
-    
-    if (menuOverlay) menuOverlay.classList.add("hidden");
-    if (pauseOverlay) pauseOverlay.classList.add("hidden");
-    
-    score = 0; level = 1; currentRunScrap = 0;
-    bombs = 1 + upgrades.bombs; playerMaxShield = 100 + (upgrades.shield * 20); playerHp = playerMaxHp; playerShield = playerMaxShield; 
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
-    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
-    
-    bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
-    targets3D = []; bullets3D = []; enemyBullets3D = [];
-    
-    updateUI(); startLevel(); gameState = "PLAYING"; 
-}
-
-function startLevel() {
-    targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
-    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
-    
-    is3DMode = (level % 7 === 0);
-
-    if (is3DMode) {
-        levelTimer3D = 30; // Survive for 30s
-        targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0;
-        spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40);
-        spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
-        return;
-    }
-    
-    let diffMult = 1.0; let speedMult = 1.0;
-    if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; }
-    else if (gameDifficulty === "hard") { diffMult = 1.5; speedMult = 1.3; }
-    let speedMod = speedMult + (level * 0.1 * speedMult);
-
-    if (level % 5 === 0 && !is3DMode) {
-        if (level % 15 === 0) {
-            let numSentinels = Math.floor(40 * diffMult);
-            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
-        } else if (level % 10 === 0) {
-            let bossR = 80 + (level * 1.2); spawnTarget("boss_mothership", bossR, speedMod * 0.2);
-            let boss = targets[targets.length - 1]; 
-            boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; 
-            boss.nodes = [{ang: 0, hp: 15}, {ang: Math.PI/2, hp: 15}, {ang: Math.PI, hp: 15}, {ang: Math.PI*1.5, hp: 15}];
-        } else {
-            let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3); 
-            let boss = targets[targets.length - 1]; 
-            boss.maxHp = Math.floor((20 + (level * 4)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.0 / diffMult; boss.chargeTimer = 0;
-            for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40 + Math.random()*20, speedMod);
-        }
-    } else {
-        let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); 
-        if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
-        for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
-        
-        let numShips = Math.floor(Math.floor(level / 3) * diffMult);
-        for (let i = 0; i < numShips; i++) {
-            let rand = Math.random();
-            if (rand < 0.3) spawnTarget("tie_fighter", 15, speedMod * 1.2);
-            else if (rand < 0.6) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
-            else if (rand < 0.8) spawnTarget("tie_advanced", 18, speedMod * 0.9);
-            else spawnTarget("star_destroyer", 50, speedMod);
-        }
-        if (level > 4) { for(let i=0; i<Math.floor(level/4); i++) spawnTarget("sentinel", 12, speedMod * 1.5); }
-    }
-}
-
 function generateJaggedAsteroid(r) {
     let vertices = [];
-    let numPoints = 12 + Math.floor(Math.random() * 8); 
+    let numPoints = 12 + Math.floor(Math.random() * 6);
     let phase = Math.random() * Math.PI * 2;
-    let elongation = 0.6 + Math.random() * 0.4; 
+    let elongation = 0.8 + Math.random() * 0.2; 
     let stretchAngle = Math.random() * Math.PI;
 
     for (let i = 0; i < numPoints; i++) {
         let angle = (i / numPoints) * Math.PI * 2;
-        let wave = Math.sin(angle * (2 + Math.random()*2) + phase) * 0.2;
-        let dist = r * (0.6 + Math.random() * 0.3 + wave);
+        let wave = Math.sin(angle * (2 + Math.random()*2) + phase) * 0.1;
+        let dist = r * (0.85 + Math.random() * 0.15 + wave);
         let dx = Math.cos(angle) * dist;
         let dy = Math.sin(angle) * dist * elongation;
         let rx = dx * Math.cos(stretchAngle) - dy * Math.sin(stretchAngle);
@@ -593,25 +509,30 @@ function generateJaggedAsteroid(r) {
     }
 
     let craters = [];
-    let numCraters = Math.floor(Math.random() * 4) + (r > 30 ? 2 : 0);
+    let numCraters = Math.floor(Math.random() * 3) + (r > 30 ? 1 : 0);
     for(let i=0; i<numCraters; i++) {
-        craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.1 + Math.random() * 0.3) });
+        craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.15 + Math.random() * 0.25) });
     }
 
+    let baseGray = 20 + Math.floor(Math.random() * 60); 
+    let baseColor = `rgb(${baseGray}, ${baseGray}, ${baseGray})`;
+    let darkGray = Math.max(5, baseGray - 20);
+    let shadowColor = `rgb(${darkGray}, ${darkGray}, ${darkGray})`;
+
     let facets = [];
-    let numFacets = 5 + Math.floor(Math.random()*10);
+    let numFacets = 4 + Math.floor(Math.random()*6);
     for(let i=0; i<numFacets; i++) {
-        let cx = (Math.random()-0.5)*r*1.2; let cy = (Math.random()-0.5)*r*1.2;
-        let size = r * (0.2 + Math.random()*0.3);
+        let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
+        let size = r * (0.4 + Math.random()*0.4);
         let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
         let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
         let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
-        let isMetallic = Math.random() > 0.5;
-        let color = isMetallic ? `rgba(200, 210, 220, ${0.4 + Math.random()*0.4})` : `rgba(180, 160, 130, ${0.3 + Math.random()*0.4})`;
-        facets.push({p1, p2, p3, color, isMetallic});
+        let fGray = baseGray + (Math.random() > 0.5 ? 15 : -15);
+        let color = `rgba(${fGray}, ${fGray}, ${fGray}, 0.6)`;
+        facets.push({p1, p2, p3, color});
     }
 
-    return { vertices, craters, facets };
+    return { vertices, craters, facets, baseColor, shadowColor, baseGray };
 }
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
@@ -810,6 +731,91 @@ function update3D(dt) {
     stars3D.forEach(s => { s.z -= 1500 * dt; if (s.z < 10) { s.z = 3000; s.x = camX + (Math.random()-0.5)*4000; s.y = camY + (Math.random()-0.5)*4000; } });
 }
 
+function render3D() {
+    ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+
+    let CX = canvas.width/2, CY = canvas.height/2;
+
+    ctx.fillStyle = "#fff";
+    stars3D.forEach(s => {
+        if (s.z < 10) return;
+        let scale = FOV / s.z; let sx = (s.x - camX) * scale + CX; let sy = (s.y - camY) * scale + CY;
+        ctx.globalAlpha = Math.min(1, scale * 5); ctx.fillRect(sx, sy, scale*3, scale*3);
+    });
+    ctx.globalAlpha = 1.0;
+
+    let renderList = [...targets3D].sort((a,b) => b.z - a.z);
+
+    bullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, b.color, 15); ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(sx, sy, b.r * scale * 2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    });
+
+    enemyBullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, "#f00", 15); ctx.fillStyle = "#f55";
+        ctx.fillRect(sx - 3*scale, sy - 3*scale, 6*scale, 6*scale); clearGlow(ctx);
+    });
+
+    renderList.forEach(t => {
+        if (t.z < 10) return;
+        let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
+        ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
+        ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
+        if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
+        else { 
+            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+            else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
+            else TargetDesigns.asteroid.draw(ctx, t.r, t); 
+        }
+        ctx.restore();
+    });
+
+    ctx.fillStyle = "#111"; 
+    ctx.beginPath(); 
+    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
+    ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
+    ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
+
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
+    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
+    ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
+    
+    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
+    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, canvas.height*0.15);
+    
+    if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    
+    ctx.textAlign = "center";
+    floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
+    
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+
+    if (!isTouchDevice) {
+        ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
+        ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
+        ctx.restore();
+    }
+    ctx.restore();
+    drawMenuOverlays();
+}
+
 function update(dt) {
     let stats = ShipDesigns[selectedShipType].stats;
     ship.angle = Math.atan2(mouse.y - ship.y, mouse.x - ship.x);
@@ -980,94 +986,9 @@ function update(dt) {
     }
 
     if (targets.length === 0 && gameState === "PLAYING") { 
-        if (level >= 25) { totalScrap += currentRunScrap; checkAndSaveScore(); gameState = "VICTORY"; } 
+        if (level >= 25) { totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "VICTORY"; } 
         else { level++; updateUI(); gameState = "LEVEL_TRANSITION"; bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup'); } 
     }
-}
-
-function render3D() {
-    ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
-
-    let CX = canvas.width/2, CY = canvas.height/2;
-
-    ctx.fillStyle = "#fff";
-    stars3D.forEach(s => {
-        if (s.z < 10) return;
-        let scale = FOV / s.z; let sx = (s.x - camX) * scale + CX; let sy = (s.y - camY) * scale + CY;
-        ctx.globalAlpha = Math.min(1, scale * 5); ctx.fillRect(sx, sy, scale*3, scale*3);
-    });
-    ctx.globalAlpha = 1.0;
-
-    let renderList = [...targets3D].sort((a,b) => b.z - a.z);
-
-    bullets3D.forEach(b => {
-        if (b.z < 10) return;
-        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
-        applyGlow(ctx, b.color, 15); ctx.fillStyle = b.color;
-        ctx.beginPath(); ctx.arc(sx, sy, b.r * scale * 2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
-    });
-
-    enemyBullets3D.forEach(b => {
-        if (b.z < 10) return;
-        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
-        applyGlow(ctx, "#f00", 15); ctx.fillStyle = "#f55";
-        ctx.fillRect(sx - 3*scale, sy - 3*scale, 6*scale, 6*scale); clearGlow(ctx);
-    });
-
-    renderList.forEach(t => {
-        if (t.z < 10) return;
-        let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
-        ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
-        ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
-        if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
-        else { 
-            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
-            else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
-            else TargetDesigns.asteroid.draw(ctx, t.r, t); 
-        }
-        ctx.restore();
-    });
-
-    ctx.fillStyle = "#111"; 
-    ctx.beginPath(); 
-    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
-    ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
-    ctx.beginPath(); 
-    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
-    ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
-    ctx.beginPath(); 
-    ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
-    ctx.beginPath(); 
-    ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
-
-    ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
-
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
-    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
-    ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
-    
-    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
-    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, canvas.height*0.15);
-    
-    if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-    
-    ctx.textAlign = "center";
-    floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
-    
-    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
-
-    if (!isTouchDevice) {
-        ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
-        ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
-        ctx.restore();
-    }
-    ctx.restore();
-    drawMenuOverlays();
 }
 
 function render() {
