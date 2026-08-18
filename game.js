@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// UI Elements (Securely declared)
+// UI Elements
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
 const hpEl = document.getElementById("hpDisplay");
@@ -39,15 +39,21 @@ let highScores = [];
 function loadSaveData() {
     try {
         let storedScores = localStorage.getItem("sfc_scores"); if (storedScores) highScores = JSON.parse(storedScores);
-        let storedScrap = localStorage.getItem("sfc_scrap"); if (storedScrap) totalScrap = parseInt(storedScrap);
+        let storedScrap = localStorage.getItem("sfc_scrap"); if (storedScrap) totalScrap = parseInt(storedScrap) || 0;
         let storedUpg = localStorage.getItem("sfc_upgrades"); if (storedUpg) upgrades = JSON.parse(storedUpg);
     } catch(e) {}
-    if (highScores.length === 0) highScores = [{name: "VDR", score: 10000}, {name: "LUK", score: 8000}, {name: "HAN", score: 6000}, {name: "BBA", score: 4000}, {name: "RD2", score: 2000}];
+    if (!highScores || highScores.length === 0) {
+        highScores = [{name: "VDR", score: 10000}, {name: "LUK", score: 8000}, {name: "HAN", score: 6000}, {name: "BBA", score: 4000}, {name: "RD2", score: 2000}];
+    }
     updateMenuUI();
 }
 
 function saveGameData() {
-    try { localStorage.setItem("sfc_scores", JSON.stringify(highScores)); localStorage.setItem("sfc_scrap", totalScrap); localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades)); } catch(e) {}
+    try {
+        localStorage.setItem("sfc_scores", JSON.stringify(highScores));
+        localStorage.setItem("sfc_scrap", totalScrap);
+        localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades));
+    } catch(e) {}
     updateMenuUI();
 }
 
@@ -60,7 +66,10 @@ function checkAndSaveScore() {
 
 function updateMenuUI() {
     if(menuScrapEl) menuScrapEl.innerText = totalScrap;
-    if(leaderboardList) { leaderboardList.innerHTML = ""; highScores.forEach((entry, i) => leaderboardList.innerHTML += `<div class="score-row"><span>${i+1}. ${entry.name}</span><span>${entry.score}</span></div>`); }
+    if(leaderboardList) { 
+        leaderboardList.innerHTML = ""; 
+        highScores.forEach((entry, i) => leaderboardList.innerHTML += `<div class="score-row"><span>${i+1}. ${entry.name}</span><span>${entry.score}</span></div>`); 
+    }
     if(upgBombBtn) { upgBombBtn.innerText = `+1 BOMB (${upgrades.bombs}/3) - 500`; upgBombBtn.disabled = (totalScrap < 500 || upgrades.bombs >= 3); }
     if(upgSpeedBtn) { upgSpeedBtn.innerText = `+5% SPD (${upgrades.speed}/5) - 300`; upgSpeedBtn.disabled = (totalScrap < 300 || upgrades.speed >= 5); }
     if(upgShieldBtn) { upgShieldBtn.innerText = `+20 SHLD (${upgrades.shield}/5) - 400`; upgShieldBtn.disabled = (totalScrap < 400 || upgrades.shield >= 5); }
@@ -78,13 +87,14 @@ let shake = 0, hyperspace = 0, nukeFlash = 0;
 let playerHp = 100, playerMaxHp = 100, playerShield = 100, playerMaxShield = 100;
 let bombs = 1, lives = 3, currentRunScrap = 0, combo = 1, comboTimer = 0, heat = 0, overheated = false;
 
-let keys = {}; let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown: false };
+let keys = {}; 
+let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown: false };
 let selectedShipType = "xwing", currentPlayerName = "AAA";
 let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [], floatingTexts = [], scrapDrops = [];
 let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
 let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
-// --- 3D STATE VARIABLES ---
+// --- 3D STATE ---
 let is3DMode = false, levelTimer3D = 0;
 const FOV = 400;
 let camX = 0, camY = 0;
@@ -112,16 +122,43 @@ function spawnParticles(x, y, color, count, speedMod = 1) { for(let i=0; i<count
 function spawnText(x, y, text, color = "#fff", size = 16) { floatingTexts.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size }); }
 function spawnScrap(x, y, amount) { for(let i=0; i<amount; i++) scrapDrops.push({ x: x, y: y, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 }); }
 
-// --- UI LISTENERS ---
-shipButtons.forEach(btn => { const startAction = (e) => { e.preventDefault(); initAudio(); startGame(btn.dataset.ship); }; btn.addEventListener("click", startAction); btn.addEventListener("touchstart", startAction, { passive: false }); });
-function updateDifficultyUI() { diffButtons.forEach(b => b.classList.remove("active")); let activeBtn = document.querySelector(`.diff-btn[data-diff="${gameDifficulty}"]`); if (activeBtn) activeBtn.classList.add("active"); }
-diffButtons.forEach(btn => { const diffAction = (e) => { e.preventDefault(); initAudio(); gameDifficulty = btn.dataset.diff; updateDifficultyUI(); }; btn.addEventListener("click", diffAction); btn.addEventListener("touchstart", diffAction, { passive: false }); });
+function updateDifficultyUI() { 
+    diffButtons.forEach(b => b.classList.remove("active")); 
+    let activeBtn = document.querySelector(`.diff-btn[data-diff="${gameDifficulty}"]`); 
+    if (activeBtn) activeBtn.classList.add("active"); 
+}
+
+diffButtons.forEach(btn => { 
+    const diffAction = (e) => { 
+        if(e) e.preventDefault(); 
+        initAudio(); 
+        gameDifficulty = btn.getAttribute("data-diff") || "moderate"; 
+        updateDifficultyUI(); 
+    }; 
+    btn.addEventListener("click", diffAction); 
+    btn.addEventListener("touchstart", diffAction, { passive: false }); 
+});
 updateDifficultyUI();
 
-function togglePause() { if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); } else if (gameState === "PAUSED") { gameState = "PLAYING"; if (pauseOverlay) pauseOverlay.classList.add("hidden"); lastTime = performance.now(); } }
-if (resumeBtn) { const resumeAction = (e) => { e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
-if (restartGameBtn) { const restartGameAction = (e) => { e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+shipButtons.forEach(btn => { 
+    const startAction = (e) => { 
+        if(e) e.preventDefault(); 
+        initAudio(); 
+        const shipChoice = btn.getAttribute("data-ship") || "xwing";
+        startGame(shipChoice); 
+    }; 
+    btn.addEventListener("click", startAction); 
+    btn.addEventListener("touchstart", startAction, { passive: false }); 
+});
+
+function togglePause() { 
+    if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); } 
+    else if (gameState === "PAUSED") { gameState = "PLAYING"; if (pauseOverlay) pauseOverlay.classList.add("hidden"); lastTime = performance.now(); } 
+}
+
+if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
+if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -154,8 +191,17 @@ function handleJoystickMove(clientX, clientY) {
     if (dist > JOYSTICK_DEADZONE) { let angle = Math.atan2(dy, dx); mouse.x = ship.x + Math.cos(angle) * JOYSTICK_AIM_DIST; mouse.y = ship.y + Math.sin(angle) * JOYSTICK_AIM_DIST; mouse.rightDown = true; } else { mouse.rightDown = false; }
 }
 function resetJoystick() { joystickTouchId = null; mouse.rightDown = false; if (joystickThumb) joystickThumb.style.transform = "translate(0px, 0px)"; }
-if (joystickZone) { joystickZone.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); let t = e.changedTouches[0], rect = joystickZone.getBoundingClientRect(); joystickTouchId = t.identifier; joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; handleJoystickMove(t.clientX, t.clientY); }, { passive: false }); joystickZone.addEventListener("touchmove", (e) => { e.preventDefault(); for (let t of e.changedTouches) if (t.identifier === joystickTouchId) handleJoystickMove(t.clientX, t.clientY); }, { passive: false }); const endJoystickTouch = (e) => { for (let t of e.changedTouches) if (t.identifier === joystickTouchId) resetJoystick(); }; joystickZone.addEventListener("touchend", endJoystickTouch); joystickZone.addEventListener("touchcancel", endJoystickTouch); }
-if (fireBtn) { fireBtn.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); mouse.leftDown = true; fireBtn.classList.add("active"); }, { passive: false }); const endFireTouch = (e) => { e.preventDefault(); mouse.leftDown = false; fireBtn.classList.remove("active"); }; fireBtn.addEventListener("touchend", endFireTouch, { passive: false }); fireBtn.addEventListener("touchcancel", endFireTouch, { passive: false }); }
+if (joystickZone) {
+    joystickZone.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); let t = e.changedTouches[0], rect = joystickZone.getBoundingClientRect(); joystickTouchId = t.identifier; joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; handleJoystickMove(t.clientX, t.clientY); }, { passive: false });
+    joystickZone.addEventListener("touchmove", (e) => { e.preventDefault(); for (let t of e.changedTouches) if (t.identifier === joystickTouchId) handleJoystickMove(t.clientX, t.clientY); }, { passive: false });
+    const endJoystickTouch = (e) => { for (let t of e.changedTouches) if (t.identifier === joystickTouchId) resetJoystick(); };
+    joystickZone.addEventListener("touchend", endJoystickTouch); joystickZone.addEventListener("touchcancel", endJoystickTouch);
+}
+if (fireBtn) {
+    fireBtn.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); mouse.leftDown = true; fireBtn.classList.add("active"); }, { passive: false });
+    const endFireTouch = (e) => { e.preventDefault(); mouse.leftDown = false; fireBtn.classList.remove("active"); };
+    fireBtn.addEventListener("touchend", endFireTouch, { passive: false }); fireBtn.addEventListener("touchcancel", endFireTouch, { passive: false });
+}
 if (bombBtn) { bombBtn.addEventListener("touchstart", (e) => { e.preventDefault(); bombBtn.classList.add("active"); triggerNuke(); }, { passive: false }); bombBtn.addEventListener("touchend", () => bombBtn.classList.remove("active")); }
 if (pauseBtn) { const pauseBtnAction = (e) => { if(e) e.preventDefault(); togglePause(); }; pauseBtn.addEventListener("touchstart", pauseBtnAction, { passive: false }); pauseBtn.addEventListener("mousedown", pauseBtnAction); }
 
@@ -169,7 +215,7 @@ function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, custom
     return { x: sx + rOffset * Math.cos(ang), y: sy + rOffset * Math.sin(ang), xv: spd * Math.cos(ang), yv: spd * Math.sin(ang), range: canvas.width * 0.8, isEnemy: isEnemy };
 }
 
-// --- SHIPS & STATS ---
+// --- SHIPS ---
 const ShipDesigns = {
     xwing: { name: "X-WING", laserColor: "#ff3333", stats: { thrust: 6, fric: 0.98, fireRate: 0.25, heat: 12 },
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
@@ -326,6 +372,7 @@ const ShipDesigns = {
     }
 };
 
+// --- TARGETS ---
 const TargetDesigns = {
     boss_station: {
         draw: (ctx, r, t) => {
@@ -409,18 +456,22 @@ const TargetDesigns = {
     },
     asteroid: {
         draw: (ctx, r, t) => {
+            if (!t || !t.vertices || t.vertices.length === 0) {
+                Object.assign(t, generateJaggedAsteroid(r || 30));
+            }
             let pts = t.vertices;
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } 
             ctx.closePath();
             
-            ctx.fillStyle = t.baseColor || "#555";
+            ctx.fillStyle = t.baseColor || "#444";
             ctx.fill();
             
             ctx.save();
             ctx.clip(); 
 
-            let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.2);
+            let safeR = Math.max(1, r * 1.2);
+            let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, safeR);
             volGrad.addColorStop(0, "rgba(255, 255, 255, 0.15)"); 
             volGrad.addColorStop(0.5, "rgba(80, 80, 80, 0.4)"); 
             volGrad.addColorStop(1, t.shadowColor || "rgba(10, 10, 10, 0.95)"); 
@@ -438,22 +489,23 @@ const TargetDesigns = {
 
             if (t.craters) {
                 t.craters.forEach(c => {
-                    let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
+                    let cr = Math.max(1, c.r);
+                    let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, cr);
                     craterGrad.addColorStop(0, "rgba(10, 10, 10, 0.9)"); 
                     craterGrad.addColorStop(0.8, "rgba(50, 50, 50, 0.6)"); 
                     craterGrad.addColorStop(1, "rgba(100, 100, 100, 0)"); 
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); 
+                    ctx.beginPath(); ctx.arc(c.x, c.y, cr, 0, Math.PI * 2); 
                     ctx.fillStyle = craterGrad; ctx.fill();
 
                     ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
                     ctx.lineWidth = 0.5;
                     for(let a=0; a<Math.PI*2; a+=Math.PI/4) {
-                        ctx.beginPath(); ctx.moveTo(c.x + Math.cos(a)*c.r*0.3, c.y + Math.sin(a)*c.r*0.3); ctx.lineTo(c.x + Math.cos(a)*c.r, c.y + Math.sin(a)*c.r); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(c.x + Math.cos(a)*cr*0.3, c.y + Math.sin(a)*cr*0.3); ctx.lineTo(c.x + Math.cos(a)*cr, c.y + Math.sin(a)*cr); ctx.stroke();
                     }
 
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.8, Math.PI * 1.8); 
+                    ctx.beginPath(); ctx.arc(c.x, c.y, cr, Math.PI * 0.8, Math.PI * 1.8); 
                     ctx.strokeStyle = "rgba(255, 255, 255, 0.15)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.2, Math.PI * 0.8); 
+                    ctx.beginPath(); ctx.arc(c.x, c.y, cr, -Math.PI * 0.2, Math.PI * 0.8); 
                     ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.lineWidth = 2; ctx.stroke();
                 });
             }
@@ -487,7 +539,7 @@ function generateJaggedAsteroid(r) {
 
     let craters = [];
     let numCraters = Math.floor(Math.random() * 3) + (r > 30 ? 1 : 0);
-    for(let i=0; i<numCraters; i++) { craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.15 + Math.random() * 0.25) }); }
+    for(let i=0; i<numCraters; i++) { craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: Math.max(2, r * (0.15 + Math.random() * 0.25)) }); }
 
     let baseGray = 30 + Math.floor(Math.random() * 70); 
     let baseColor = `rgb(${baseGray}, ${baseGray}, ${baseGray})`;
@@ -499,7 +551,9 @@ function generateJaggedAsteroid(r) {
     for(let i=0; i<numFacets; i++) {
         let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
         let size = r * (0.4 + Math.random()*0.4);
-        let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
+        let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; 
+        let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; 
+        let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
         let fGray = baseGray + (Math.random() > 0.5 ? 10 : -10);
         let color = `rgba(${fGray}, ${fGray}, ${fGray}, 0.5)`;
         facets.push({p1, p2, p3, color});
@@ -543,9 +597,51 @@ function spawnPowerup() {
     powerupSpawnedThisLevel = true;
 }
 
+function updateUI() {
+    if(scoreEl) scoreEl.innerText = score; 
+    if(levelEl) levelEl.innerText = level; 
+    if(hpEl) hpEl.innerText = Math.ceil(playerHp); 
+    if(shEl) shEl.innerText = Math.ceil(playerShield);
+    if(bombEl) bombEl.innerText = bombs; 
+    if(comboEl) comboEl.innerText = combo + "x"; 
+    if(scrapEl) scrapEl.innerText = currentRunScrap;
+    
+    if(heatEl) {
+        heatEl.innerText = Math.ceil(heat) + "%";
+        if(overheated) heatEl.style.color = "#ff0000"; else if (heat > 75) heatEl.style.color = "#ff5500"; else heatEl.style.color = "#ffff00";
+    }
+    let pTxt = ""; if(multishotTimer > 0) pTxt += `[MULTI ${Math.ceil(multishotTimer)}s]`;
+    if(powerupEl) { powerupEl.innerText = pTxt || "NONE"; powerupEl.style.color = (multishotTimer > 0 ? "#ff00ff" : "#33ccff"); }
+}
+
+function damagePlayer(amt) {
+    if (invulnTimer > 0 || gameState !== "PLAYING") return;
+    playSfx('hit'); shake += 5; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
+    spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
+    combo = 1; comboTimer = 0; 
+    
+    if (playerShield > 0) { 
+        playerShield -= amt; 
+        if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x || canvas.width/2, (ship.y || canvas.height/2)-20, "SHIELD BROKEN", "#00ffff", 14); } 
+    } else { playerHp -= amt; }
+    
+    if (playerHp <= 0) {
+        playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
+        if (lives > 1) { 
+            lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); 
+        } else { 
+            lives = 0; playerHp = 0; playerShield = 0; updateUI(); totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; 
+        }
+    }
+    updateUI();
+}
+
 function startGame(shipId) {
-    let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA"; 
-    currentPlayerName = nameVal; selectedShipType = shipId; 
+    let nameVal = "AAA"; 
+    if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } 
+    if(nameVal.length < 1) nameVal = "AAA"; 
+    currentPlayerName = nameVal; 
+    selectedShipType = (ShipDesigns[shipId]) ? shipId : "xwing"; 
     
     if (menuOverlay) menuOverlay.classList.add("hidden");
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
@@ -558,7 +654,9 @@ function startGame(shipId) {
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
     targets3D = []; bullets3D = []; enemyBullets3D = [];
     
-    updateUI(); startLevel(); gameState = "PLAYING"; 
+    updateUI(); 
+    startLevel(); 
+    gameState = "PLAYING"; 
 }
 
 function startLevel() {
@@ -616,13 +714,19 @@ for(let i=0; i<8; i++) spawnTarget("asteroid", 40, 2.0);
 
 let lastTime = performance.now();
 function loop(timestamp) {
-    let dt = (timestamp - lastTime) / 1000; if (dt > 0.1 || isNaN(dt)) dt = 0.016; lastTime = timestamp; frames++;
+    let dt = (timestamp - lastTime) / 1000; 
+    if (dt > 0.1 || isNaN(dt)) dt = 0.016; 
+    lastTime = timestamp; 
+    frames++;
     
     if (gameState === "PLAYING") { 
         if (is3DMode) update3D(dt); 
         else update(dt); 
     } 
-    else if (gameState === "LEVEL_TRANSITION") { hyperspace += dt; ship.x += 1000 * dt; if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } } 
+    else if (gameState === "LEVEL_TRANSITION") { 
+        hyperspace += dt; ship.x += 1000 * dt; 
+        if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } 
+    } 
     else if (gameState === "MENU") {
         targets.forEach(t => { 
             t.x += t.xv * 0.5; t.y += t.yv * 0.5; t.angle += t.rotSpeed * dt * 0.5; 
@@ -730,7 +834,8 @@ function update(dt) {
     if (invulnTimer > 0) invulnTimer -= dt;
     if (nukeFlash > 0) nukeFlash -= dt * 2;
     if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 1; updateUI(); }
-    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } else { heat -= 20 * dt; if (heat < 0) heat = 0; }
+    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } 
+    else { heat -= 20 * dt; if (heat < 0) heat = 0; }
 
     const wrap = (obj) => { if (obj.x < -obj.r) obj.x = canvas.width + obj.r; else if (obj.x > canvas.width + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = canvas.height + obj.r; else if (obj.y > canvas.height + obj.r) obj.y = -obj.r; };
     wrap(ship);
@@ -935,6 +1040,7 @@ function render3D() {
         ctx.restore();
     });
 
+    // Cockpit Canopy Frame
     ctx.fillStyle = "#111"; 
     ctx.beginPath(); 
     ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
