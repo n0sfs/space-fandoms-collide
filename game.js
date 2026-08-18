@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// UI Elements (Securely declared to prevent Reference Errors!)
+// UI Elements (Securely declared)
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
 const hpEl = document.getElementById("hpDisplay");
@@ -11,7 +11,6 @@ const heatEl = document.getElementById("heatDisplay");
 const comboEl = document.getElementById("comboDisplay");
 const scrapEl = document.getElementById("scrapDisplay");
 
-// Legacy UI Elements (Safely catch null if missing from HTML)
 const powerupEl = document.getElementById("powerupDisplay");
 const livesEl = document.getElementById("livesDisplay");
 const shipNameEl = document.getElementById("shipNameDisplay");
@@ -79,16 +78,14 @@ let shake = 0, hyperspace = 0, nukeFlash = 0;
 let playerHp = 100, playerMaxHp = 100, playerShield = 100, playerMaxShield = 100;
 let bombs = 1, lives = 3, currentRunScrap = 0, combo = 1, comboTimer = 0, heat = 0, overheated = false;
 
-// Input & Standard 2D Arrays
 let keys = {}; let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown: false };
 let selectedShipType = "xwing", currentPlayerName = "AAA";
 let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [], floatingTexts = [], scrapDrops = [];
 let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
 let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
-// --- 1ST PERSON 3D STATE VARIABLES ---
-let is3DMode = false;
-let levelTimer3D = 0;
+// --- 3D STATE VARIABLES ---
+let is3DMode = false, levelTimer3D = 0;
 const FOV = 400;
 let camX = 0, camY = 0;
 let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
@@ -100,8 +97,7 @@ function initAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext 
 function playSfx(type) {
     if (!audioCtx) return;
     try {
-        let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime;
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime; osc.connect(gain); gain.connect(audioCtx.destination);
         if (type === 'shoot') { osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); } 
         else if (type === 'enemyShoot') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(50, now + 0.15); gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15); osc.start(now); osc.stop(now + 0.15); }
         else if (type === 'boom') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(10, now + 0.3); gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3); osc.start(now); osc.stop(now + 0.3); } 
@@ -112,18 +108,9 @@ function playSfx(type) {
     } catch (e) {} 
 }
 
-function spawnParticles(x, y, color, count, speedMod = 1) {
-    for(let i=0; i<count; i++) {
-        let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2;
-        particles.push({ x: x, y: y, xv: Math.cos(angle) * speed, yv: Math.sin(angle) * speed, life: 1.0, color: color, size: Math.random() * 2 + 1 });
-    }
-}
-function spawnText(x, y, text, color = "#fff", size = 16) {
-    floatingTexts.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size });
-}
-function spawnScrap(x, y, amount) {
-    for(let i=0; i<amount; i++) scrapDrops.push({ x: x, y: y, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 });
-}
+function spawnParticles(x, y, color, count, speedMod = 1) { for(let i=0; i<count; i++) { let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2; particles.push({ x: x, y: y, xv: Math.cos(angle) * speed, yv: Math.sin(angle) * speed, life: 1.0, color: color, size: Math.random() * 2 + 1 }); } }
+function spawnText(x, y, text, color = "#fff", size = 16) { floatingTexts.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size }); }
+function spawnScrap(x, y, amount) { for(let i=0; i<amount; i++) scrapDrops.push({ x: x, y: y, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 }); }
 
 // --- UI LISTENERS ---
 shipButtons.forEach(btn => { const startAction = (e) => { e.preventDefault(); initAudio(); startGame(btn.dataset.ship); }; btn.addEventListener("click", startAction); btn.addEventListener("touchstart", startAction, { passive: false }); });
@@ -139,14 +126,8 @@ if (quitBtn) { const quitAction = (e) => { e.preventDefault(); initAudio(); if (
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
     bombs--; playSfx('nuke'); nukeFlash = 1.0; shake = 30; 
-    
-    if (is3DMode) {
-        enemyBullets3D = [];
-        targets3D.forEach(t => t.hp = -1);
-    } else {
-        enemyBullets = []; 
-        targets.forEach(t => { if (t.hp !== undefined) { t.hp -= 50; spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; });
-    }
+    if (is3DMode) { enemyBullets3D = []; targets3D.forEach(t => t.hp = -1); } 
+    else { enemyBullets = []; targets.forEach(t => { if (t.hp !== undefined) { t.hp -= 50; spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; }); }
     updateUI();
 }
 
@@ -429,56 +410,51 @@ const TargetDesigns = {
     asteroid: {
         draw: (ctx, r, t) => {
             let pts = t.vertices;
-            
-            ctx.fillStyle = t.shadowColor || "#222"; 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } 
             ctx.closePath();
             
+            ctx.fillStyle = t.baseColor || "#555";
+            ctx.fill();
+            
             ctx.save();
             ctx.clip(); 
-            ctx.fill();
 
             let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.2);
-            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.2)"); 
-            volGrad.addColorStop(0.5, t.baseColor || "rgba(80, 80, 80, 0.8)"); 
-            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.95)"); 
+            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.15)"); 
+            volGrad.addColorStop(0.5, "rgba(80, 80, 80, 0.4)"); 
+            volGrad.addColorStop(1, t.shadowColor || "rgba(10, 10, 10, 0.95)"); 
             ctx.fillStyle = volGrad;
             ctx.fill();
 
             if (t.facets) {
+                ctx.lineWidth = 1;
                 t.facets.forEach(f => {
                     ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y); ctx.closePath();
                     ctx.fillStyle = f.color; ctx.fill();
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.3)"; ctx.stroke();
                 });
             }
 
             if (t.craters) {
                 t.craters.forEach(c => {
                     let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
-                    craterGrad.addColorStop(0, "rgba(5, 5, 5, 0.9)"); 
-                    craterGrad.addColorStop(0.8, "rgba(40, 40, 40, 0.6)"); 
+                    craterGrad.addColorStop(0, "rgba(10, 10, 10, 0.9)"); 
+                    craterGrad.addColorStop(0.8, "rgba(50, 50, 50, 0.6)"); 
                     craterGrad.addColorStop(1, "rgba(100, 100, 100, 0)"); 
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); 
                     ctx.fillStyle = craterGrad; ctx.fill();
 
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
                     ctx.lineWidth = 0.5;
                     for(let a=0; a<Math.PI*2; a+=Math.PI/4) {
-                        ctx.beginPath();
-                        ctx.moveTo(c.x + Math.cos(a)*c.r*0.3, c.y + Math.sin(a)*c.r*0.3);
-                        ctx.lineTo(c.x + Math.cos(a)*c.r, c.y + Math.sin(a)*c.r);
-                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(c.x + Math.cos(a)*c.r*0.3, c.y + Math.sin(a)*c.r*0.3); ctx.lineTo(c.x + Math.cos(a)*c.r, c.y + Math.sin(a)*c.r); ctx.stroke();
                     }
 
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.8, Math.PI * 1.8); 
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
-                    
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
                     ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.2, Math.PI * 0.8); 
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.7)"; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.lineWidth = 2; ctx.stroke();
                 });
             }
             ctx.restore();
@@ -486,7 +462,7 @@ const TargetDesigns = {
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
             ctx.closePath(); 
-            ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
         }
     }
 };
@@ -511,13 +487,11 @@ function generateJaggedAsteroid(r) {
 
     let craters = [];
     let numCraters = Math.floor(Math.random() * 3) + (r > 30 ? 1 : 0);
-    for(let i=0; i<numCraters; i++) {
-        craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.15 + Math.random() * 0.25) });
-    }
+    for(let i=0; i<numCraters; i++) { craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.15 + Math.random() * 0.25) }); }
 
-    let baseGray = 20 + Math.floor(Math.random() * 60); 
+    let baseGray = 30 + Math.floor(Math.random() * 70); 
     let baseColor = `rgb(${baseGray}, ${baseGray}, ${baseGray})`;
-    let darkGray = Math.max(5, baseGray - 20);
+    let darkGray = Math.max(5, baseGray - 25);
     let shadowColor = `rgb(${darkGray}, ${darkGray}, ${darkGray})`;
 
     let facets = [];
@@ -525,21 +499,18 @@ function generateJaggedAsteroid(r) {
     for(let i=0; i<numFacets; i++) {
         let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
         let size = r * (0.4 + Math.random()*0.4);
-        let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
-        let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
-        let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
-        let fGray = baseGray + (Math.random() > 0.5 ? 15 : -15);
-        let color = `rgba(${fGray}, ${fGray}, ${fGray}, 0.6)`;
+        let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
+        let fGray = baseGray + (Math.random() > 0.5 ? 10 : -10);
+        let color = `rgba(${fGray}, ${fGray}, ${fGray}, 0.5)`;
         facets.push({p1, p2, p3, color});
     }
 
-    return { vertices, craters, facets, baseColor, shadowColor, baseGray };
+    return { vertices, craters, facets, baseColor, shadowColor };
 }
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
     if (x === null) { do { x = Math.random() * canvas.width; y = Math.random() * canvas.height; } while (Math.hypot(ship.x - x, ship.y - y) < 200); }
-    
     if (type === "asteroid" && Math.random() < 0.1) { type = "satellite"; baseR = 25; }
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
@@ -572,6 +543,75 @@ function spawnPowerup() {
     powerupSpawnedThisLevel = true;
 }
 
+function startGame(shipId) {
+    let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA"; 
+    currentPlayerName = nameVal; selectedShipType = shipId; 
+    
+    if (menuOverlay) menuOverlay.classList.add("hidden");
+    if (pauseOverlay) pauseOverlay.classList.add("hidden");
+    
+    score = 0; level = 1; currentRunScrap = 0;
+    bombs = 1 + upgrades.bombs; playerMaxShield = 100 + (upgrades.shield * 20); playerHp = playerMaxHp; playerShield = playerMaxShield; 
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
+    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
+    
+    bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
+    targets3D = []; bullets3D = []; enemyBullets3D = [];
+    
+    updateUI(); startLevel(); gameState = "PLAYING"; 
+}
+
+function startLevel() {
+    targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
+    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
+    
+    is3DMode = (level % 7 === 0);
+
+    if (is3DMode) {
+        levelTimer3D = 30;
+        targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0;
+        spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40);
+        spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
+        return;
+    }
+    
+    let diffMult = 1.0; let speedMult = 1.0;
+    if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; }
+    else if (gameDifficulty === "hard") { diffMult = 1.5; speedMult = 1.3; }
+    let speedMod = speedMult + (level * 0.1 * speedMult);
+
+    if (level % 5 === 0 && !is3DMode) {
+        if (level % 15 === 0) {
+            let numSentinels = Math.floor(40 * diffMult);
+            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
+        } else if (level % 10 === 0) {
+            let bossR = 80 + (level * 1.2); spawnTarget("boss_mothership", bossR, speedMod * 0.2);
+            let boss = targets[targets.length - 1]; 
+            boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; 
+            boss.nodes = [{ang: 0, hp: 15}, {ang: Math.PI/2, hp: 15}, {ang: Math.PI, hp: 15}, {ang: Math.PI*1.5, hp: 15}];
+        } else {
+            let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3); 
+            let boss = targets[targets.length - 1]; 
+            boss.maxHp = Math.floor((20 + (level * 4)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.0 / diffMult; boss.chargeTimer = 0;
+            for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40 + Math.random()*20, speedMod);
+        }
+    } else {
+        let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); 
+        if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
+        for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
+        
+        let numShips = Math.floor(Math.floor(level / 3) * diffMult);
+        for (let i = 0; i < numShips; i++) {
+            let rand = Math.random();
+            if (rand < 0.3) spawnTarget("tie_fighter", 15, speedMod * 1.2);
+            else if (rand < 0.6) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
+            else if (rand < 0.8) spawnTarget("tie_advanced", 18, speedMod * 0.9);
+            else spawnTarget("star_destroyer", 50, speedMod);
+        }
+        if (level > 4) { for(let i=0; i<Math.floor(level/4); i++) spawnTarget("sentinel", 12, speedMod * 1.5); }
+    }
+}
+
 for(let i=0; i<8; i++) spawnTarget("asteroid", 40, 2.0);
 
 let lastTime = performance.now();
@@ -598,36 +638,6 @@ function loop(timestamp) {
 }
 requestAnimationFrame(loop); 
 
-function updateUI() {
-    if(scoreEl) scoreEl.innerText = score; if(levelEl) levelEl.innerText = level; 
-    if(hpEl) hpEl.innerText = Math.ceil(playerHp); if(shEl) shEl.innerText = Math.ceil(playerShield);
-    if(bombEl) bombEl.innerText = bombs; if(comboEl) comboEl.innerText = combo + "x"; if(scrapEl) scrapEl.innerText = currentRunScrap;
-    
-    if(heatEl) {
-        heatEl.innerText = Math.ceil(heat) + "%";
-        if(overheated) heatEl.style.color = "#ff0000"; else if (heat > 75) heatEl.style.color = "#ff5500"; else heatEl.style.color = "#ffff00";
-    }
-    let pTxt = ""; if(multishotTimer > 0) pTxt += `[MULTI ${Math.ceil(multishotTimer)}s]`;
-    if(powerupEl) { powerupEl.innerText = pTxt || "NONE"; powerupEl.style.color = (multishotTimer > 0 ? "#ff00ff" : "#33ccff"); }
-}
-
-function damagePlayer(amt) {
-    if (invulnTimer > 0 || gameState !== "PLAYING") return;
-    playSfx('hit'); shake += 5; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
-    spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
-    combo = 1; comboTimer = 0; 
-    
-    if (playerShield > 0) { playerShield -= amt; if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x || canvas.width/2, (ship.y || canvas.height/2)-20, "SHIELD BROKEN", "#00ffff", 14); } } 
-    else { playerHp -= amt; }
-    
-    if (playerHp <= 0) {
-        playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
-        if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
-        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; }
-    }
-    updateUI();
-}
-
 function update3D(dt) {
     if (invulnTimer > 0) invulnTimer -= dt;
     if (nukeFlash > 0) nukeFlash -= dt * 2;
@@ -641,8 +651,7 @@ function update3D(dt) {
     if (keys["ArrowLeft"] || keys["KeyA"]) camX -= speed * dt;
     if (keys["ArrowRight"] || keys["KeyD"]) camX += speed * dt;
     
-    camX = Math.max(-3000, Math.min(3000, camX));
-    camY = Math.max(-3000, Math.min(3000, camY));
+    camX = Math.max(-3000, Math.min(3000, camX)); camY = Math.max(-3000, Math.min(3000, camY));
 
     if (fireCooldown > 0) fireCooldown -= dt;
     if ((keys["Space"] || mouse.leftDown) && fireCooldown <= 0 && !overheated) {
@@ -665,49 +674,31 @@ function update3D(dt) {
     if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
 
     levelTimer3D -= dt;
-    if (levelTimer3D > 0) {
-        let spawnRate = 0.03 + (level * 0.002);
-        if (Math.random() < spawnRate) spawnTarget3D();
-    } else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
+    if (levelTimer3D > 0) { let spawnRate = 0.03 + (level * 0.002); if (Math.random() < spawnRate) spawnTarget3D(); } 
+    else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
         level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
-        bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = [];
-        return;
+        bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
     }
 
     for(let i = floatingTexts.length-1; i>=0; i--) { let t = floatingTexts[i]; t.y -= 30 * dt; t.life -= dt * 1.5; if(t.life <= 0) floatingTexts.splice(i, 1); }
-
-    for(let i=bullets3D.length-1; i>=0; i--) {
-        let b = bullets3D[i]; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt;
-        if (b.z > 4000) bullets3D.splice(i, 1);
-    }
-    
+    for(let i=bullets3D.length-1; i>=0; i--) { let b = bullets3D[i]; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt; if (b.z > 4000) bullets3D.splice(i, 1); }
     for(let i=enemyBullets3D.length-1; i>=0; i--) {
         let b = enemyBullets3D[i]; b.x += b.vx*dt; b.y += b.vy*dt; b.z += b.vz*dt;
-        if (b.z < 10) {
-            if (Math.hypot(b.x - camX, b.y - camY) < 50 && invulnTimer <= 0) { damagePlayer(15); }
-            enemyBullets3D.splice(i, 1);
-        }
+        if (b.z < 10) { if (Math.hypot(b.x - camX, b.y - camY) < 50 && invulnTimer <= 0) { damagePlayer(15); } enemyBullets3D.splice(i, 1); }
     }
 
     for(let i=targets3D.length-1; i>=0; i--) {
         let t = targets3D[i];
-        
         if (t.type === "tie_fighter") {
-            let dx = camX - t.x; let dy = camY - t.y;
-            t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; 
+            let dx = camX - t.x; let dy = camY - t.y; t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; 
             t.fireTimer -= dt;
-            if (t.fireTimer <= 0 && t.z < 2500) {
-                enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.8, vy: (camY - t.y)*0.8, vz: -1200 });
-                t.fireTimer = 1.5; playSfx('enemyShoot');
-            }
+            if (t.fireTimer <= 0 && t.z < 2500) { enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.8, vy: (camY - t.y)*0.8, vz: -1200 }); t.fireTimer = 1.5; playSfx('enemyShoot'); }
         }
 
         t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
         if (t.hitFlash > 0) t.hitFlash -= dt;
 
-        if (t.z < 50 && t.z > -50) {
-            if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; }
-        }
+        if (t.z < 50 && t.z > -50) { if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; } }
         if (t.z < -100) { targets3D.splice(i, 1); continue; }
 
         let hit = false;
@@ -715,15 +706,10 @@ function update3D(dt) {
             let b = bullets3D[j];
             if (Math.abs(b.z - t.z) < 150 && Math.hypot(b.x - t.x, b.y - t.y) < t.r + 20) {
                 let dmg = b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1);
-                t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit');
-                spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff");
-                bullets3D.splice(j, 1);
+                t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0;
-                    score += (t.type==="satellite" ? 75 : 50) * combo; 
-                    currentRunScrap += (t.type==="satellite" ? 5 : 2); 
-                    updateUI();
-                    hit = true; break;
+                    score += (t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
                 }
             }
         }
@@ -744,9 +730,7 @@ function update(dt) {
     if (invulnTimer > 0) invulnTimer -= dt;
     if (nukeFlash > 0) nukeFlash -= dt * 2;
     if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 1; updateUI(); }
-    
-    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } 
-    else { heat -= 20 * dt; if (heat < 0) heat = 0; }
+    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } else { heat -= 20 * dt; if (heat < 0) heat = 0; }
 
     const wrap = (obj) => { if (obj.x < -obj.r) obj.x = canvas.width + obj.r; else if (obj.x > canvas.width + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = canvas.height + obj.r; else if (obj.y > canvas.height + obj.r) obj.y = -obj.r; };
     wrap(ship);
@@ -776,7 +760,6 @@ function update(dt) {
     if (level > 2 && !powerupSpawnedThisLevel && targets.length < 5 && Math.random() < 0.005) spawnPowerup();
 
     for(let i = floatingTexts.length-1; i>=0; i--) { let t = floatingTexts[i]; t.y -= 30 * dt; t.life -= dt * 1.5; if(t.life <= 0) floatingTexts.splice(i, 1); }
-
     for(let i = scrapDrops.length-1; i>=0; i--) { 
         let s = scrapDrops[i]; s.x += s.xv; s.y += s.yv; s.life -= dt; 
         if(s.life <= 0) { scrapDrops.splice(i,1); continue; }
@@ -813,4 +796,279 @@ function update(dt) {
         if (t.hitFlash > 0) t.hitFlash -= dt;
 
         if (t.type === "sentinel") { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); t.angle = angToPlayer; t.xv = Math.cos(angToPlayer) * 3; t.yv = Math.sin(angToPlayer) * 3; }
-        if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.I encountered an error doing what you asked. Could you try again?
+        if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); enemyBullets.push({ x: t.x, y: t.y, xv: 6 * Math.cos(angToPlayer), yv: 6 * Math.sin(angToPlayer), range: canvas.width * 0.8 }); playSfx('enemyShoot'); t.fireTimer = 2.0; } }
+        if (t.type === "boss_station") {
+            if (t.spawnTimer === undefined) t.spawnTimer = 2; t.spawnTimer -= dt;
+            if (t.spawnTimer <= 0 && targets.length < 15) { spawnTarget("tie_fighter", 15, 1.5 + (level * 0.1), t.x, t.y); t.spawnTimer = 4; }
+            t.chargeTimer += dt;
+            if (t.chargeTimer > 5.0) { playSfx('boom'); shake += 10; t.chargeTimer = 0; let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); for(let i=0; i<5; i++) enemyBullets.push({ x: t.x, y: t.y, xv: 8 * Math.cos(angToPlayer+(i*0.1-0.2)), yv: 8 * Math.sin(angToPlayer+(i*0.1-0.2)), range: canvas.width }); }
+        }
+        if (t.type === "boss_mothership" && t.nodes) { t.nodes.forEach(n => n.ang += dt); }
+        wrap(t); 
+    });
+
+    for (let i = targets.length - 1; i >= 0; i--) {
+        let t1 = targets[i];
+        if (t1.type !== "asteroid" && t1.type !== "satellite" && !t1.type.startsWith("boss")) {
+            let smashed = false;
+            for (let j = 0; j < targets.length; j++) {
+                let t2 = targets[j];
+                if (t2.type === "asteroid") {
+                    let dist = Math.hypot(t1.x - t2.x, t1.y - t2.y);
+                    if (dist < t1.r + t2.r + 100) { t1.xv += (t1.x - t2.x) * 0.8 * dt; t1.yv += (t1.y - t2.y) * 0.8 * dt; }
+                    if (dist < t1.r + t2.r * 0.8) { smashed = true; spawnParticles(t1.x, t1.y, "#ff5500", 20); playSfx('boom'); break; }
+                }
+            }
+            if (smashed) { targets.splice(i, 1); }
+        }
+    }
+
+    for (let i = targets.length - 1; i >= 0; i--) {
+        let hitByTrail = false;
+        for (let j = 0; j < lightTrails.length; j++) { if (Math.hypot(targets[i].x - lightTrails[j].x, targets[i].y - lightTrails[j].y) < targets[i].r + 10) { hitByTrail = true; break; } }
+        if (hitByTrail) { if (targets[i].hp !== undefined) { targets[i].hp -= 0.5; spawnText(targets[i].x, targets[i].y, "-1", "#0ff", 10); } else targets[i].hp = -1; targets[i].hitFlash = 0.1; }
+    }
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let hit = false;
+        for (let j = targets.length - 1; j >= 0; j--) {
+            let t = targets[j]; 
+            let dmg = bullets[i].isEmpBolt ? 2 : (selectedShipType === 'enterprise' ? 2 : 1);
+            
+            if (t.type === "boss_mothership") {
+                let hitNode = false; let allDead = true;
+                t.nodes.forEach(n => {
+                    if (n.hp > 0) { allDead = false; let nx = t.x + Math.cos(n.ang) * t.r * 1.2; let ny = t.y + Math.sin(n.ang) * t.r * 1.2; if (Math.hypot(bullets[i].x - nx, bullets[i].y - ny) < 20) { n.hp-=dmg; hitNode = true; spawnParticles(nx, ny, "#0ff", 5); playSfx('hit'); spawnText(nx, ny, `-${dmg}`, "#fff"); } }
+                });
+                if (hitNode) { hit = true; break; }
+                if (!allDead) { if (Math.hypot(bullets[i].x - t.x, bullets[i].y - t.y) < t.r * 1.4) { hit = true; playSfx('hit'); spawnParticles(bullets[i].x, bullets[i].y, "#0ff", 5); break; } } 
+            }
+
+            if (Math.hypot(bullets[i].x - t.x, bullets[i].y - t.y) < (t.r + (bullets[i].r || 2))) {
+                if (bullets[i].isHack && t.type !== "asteroid" && t.type !== "satellite") { t.stunned = 3.0; spawnText(t.x, t.y, "HACKED", "#0f0", 14); }
+                if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
+                
+                playSfx('hit');
+                if (t.hp !== undefined && t.hp > dmg) { 
+                    t.hp -= dmg; t.hitFlash = 0.1; score += 25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; 
+                }
+                
+                playSfx('boom'); shake = t.r > 30 ? 10 : 3;
+                spawnParticles(t.x, t.y, (t.type==="asteroid"||t.type==="satellite") ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
+                spawnText(t.x, t.y, "DESTROYED", "#ff0000");
+                combo++; if(combo>10) combo=10; comboTimer = 4.0;
+                
+                let diffMod = 1 + (level * 0.1);
+                if (t.type === "boss_station" || t.type === "boss_mothership") { score += 1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); } 
+                else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); } 
+                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); } 
+                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); } 
+                else if (t.type === "satellite") { score += 75*combo; spawnScrap(t.x, t.y, 5); }
+                else if (t.type === "asteroid") { score += ((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
+                
+                targets.splice(j, 1); hit = true; break;
+            }
+        }
+        if (hit && !bullets[i].isEmp) { bullets.splice(i, 1); updateUI(); }
+    }
+
+    if (invulnTimer <= 0) {
+        for (let j = targets.length - 1; j >= 0; j--) {
+            let t = targets[j];
+            if (Math.hypot(ship.x - t.x, ship.y - t.y) < ship.r + t.r * 0.8) { 
+                let isBoss = (t.type === "boss_station" || t.type === "boss_mothership");
+                damagePlayer(isBoss ? 100 : 40); 
+                if (!isBoss) { spawnParticles(t.x, t.y, "#ff5500", 15); targets.splice(j, 1); }
+                break;
+            } 
+        }
+    }
+
+    if (targets.length === 0 && gameState === "PLAYING") { 
+        if (level >= 25) { totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "VICTORY"; } 
+        else { level++; updateUI(); gameState = "LEVEL_TRANSITION"; bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup'); } 
+    }
+}
+
+function render3D() {
+    ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+
+    let CX = canvas.width/2, CY = canvas.height/2;
+
+    ctx.fillStyle = "#fff";
+    stars3D.forEach(s => {
+        if (s.z < 10) return;
+        let scale = FOV / s.z; let sx = (s.x - camX) * scale + CX; let sy = (s.y - camY) * scale + CY;
+        ctx.globalAlpha = Math.min(1, scale * 5); ctx.fillRect(sx, sy, scale*3, scale*3);
+    });
+    ctx.globalAlpha = 1.0;
+
+    let renderList = [...targets3D].sort((a,b) => b.z - a.z);
+
+    bullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, b.color, 15); ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(sx, sy, b.r * scale * 2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    });
+
+    enemyBullets3D.forEach(b => {
+        if (b.z < 10) return;
+        let scale = FOV / b.z; let sx = (b.x - camX) * scale + CX; let sy = (b.y - camY) * scale + CY;
+        applyGlow(ctx, "#f00", 15); ctx.fillStyle = "#f55";
+        ctx.fillRect(sx - 3*scale, sy - 3*scale, 6*scale, 6*scale); clearGlow(ctx);
+    });
+
+    renderList.forEach(t => {
+        if (t.z < 10) return;
+        let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
+        ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
+        ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
+        if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
+        else { 
+            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+            else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
+            else TargetDesigns.asteroid.draw(ctx, t.r, t); 
+        }
+        ctx.restore();
+    });
+
+    ctx.fillStyle = "#111"; 
+    ctx.beginPath(); 
+    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
+    ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
+    ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
+    ctx.beginPath(); 
+    ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
+
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
+    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
+    ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
+    
+    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
+    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, canvas.height*0.15);
+    
+    if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    
+    ctx.textAlign = "center";
+    floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
+    
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+
+    if (!isTouchDevice) {
+        ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
+        ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
+        ctx.restore();
+    }
+    ctx.restore();
+    drawMenuOverlays();
+}
+
+function render() {
+    ctx.fillStyle = `hsl(${level * 15}, 30%, 5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+
+    ctx.fillStyle = "white";
+    for(let i=0; i<100; i++) { 
+        let layer = (i%3) + 1; let spdMult = layer * 0.5;
+        let sx = (Math.sin(i*74) * 10000 + frames * spdMult) % canvas.width; 
+        let sy = (Math.cos(i*31) * 10000 + frames * spdMult * 0.5) % canvas.height; 
+        if (gameState === "LEVEL_TRANSITION") { ctx.globalAlpha = layer*0.3; ctx.fillRect(Math.abs(sx), Math.abs(sy), hyperspace*50*layer, layer); } 
+        else { ctx.globalAlpha = layer * 0.3; ctx.fillRect(Math.abs(sx), Math.abs(sy), layer, layer); ctx.globalAlpha = 1.0; }
+    }
+
+    if (gameState === "PLAYING") {
+        targets.forEach(t => {
+            if (t.type.startsWith("boss") || t.type === "tie_advanced" || t.type === "sentinel") {
+                let dist = Math.hypot(ship.x - t.x, ship.y - t.y);
+                if (dist > canvas.width/2) {
+                    let ang = Math.atan2(t.y - ship.y, t.x - ship.x);
+                    let edgeX = ship.x + Math.cos(ang) * (canvas.width/2 - 30); let edgeY = ship.y + Math.sin(ang) * (canvas.height/2 - 30);
+                    ctx.save(); ctx.translate(edgeX, edgeY); ctx.rotate(ang);
+                    ctx.fillStyle = "rgba(255, 0, 0, 0.5)"; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-10, 10); ctx.lineTo(-10, -10); ctx.fill();
+                    ctx.restore();
+                }
+            }
+        });
+    }
+
+    lightTrails.forEach(t => { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = `rgba(0, 255, 255, ${t.life / 8.0})`; ctx.beginPath(); ctx.arc(t.x, t.y, 6, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); });
+    scrapDrops.forEach(s => { applyGlow(ctx, "#ff00ff", 10); ctx.fillStyle = `rgba(255, 0, 255, ${s.life/8})`; ctx.fillRect(s.x-3, s.y-3, 6, 6); clearGlow(ctx); });
+
+    targets.forEach(t => { 
+        ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle); 
+        if (t.stunned > 0) { ctx.translate((Math.random()-0.5)*5, (Math.random()-0.5)*5); } 
+        if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+        else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
+        else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t); 
+        ctx.restore(); 
+    });
+
+    powerups.forEach(p => {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+        let color = p.type === 'M' ? "#ff00ff" : (p.type === 'S' ? "#00ffff" : (p.type === 'B' ? "#ffcc00" : "#33ff33"));
+        applyGlow(ctx, color, 15); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(-p.r/2, -p.r/2, p.r, p.r);
+        ctx.fillStyle = color; ctx.font = "bold 16px Courier"; ctx.fillText(p.type, -5, 5); clearGlow(ctx); ctx.restore();
+    });
+
+    particles.forEach(p => { 
+        ctx.globalAlpha = p.life; 
+        if (p.isEmp) { ctx.strokeStyle = p.color; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.stroke(); }
+        else { ctx.strokeStyle = p.color; ctx.lineWidth = p.size; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.xv * 2, p.y - p.yv * 2); ctx.stroke(); }
+    }); ctx.globalAlpha = 1.0;
+
+    applyGlow(ctx, "#ff0000", 15); ctx.fillStyle = "#ff5555";
+    enemyBullets.forEach(b => { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); ctx.fillRect(-6, -2, 12, 4); ctx.restore(); }); clearGlow(ctx);
+
+    bullets.forEach(b => { 
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); 
+        if (b.isHack) { applyGlow(ctx, "#00ff00", 12); ctx.fillStyle = "#00ff00"; ctx.font = "bold 14px Courier New"; ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4); clearGlow(ctx); } 
+        else if (b.isEmpBolt) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke(); clearGlow(ctx); } 
+        else { ctx.fillStyle = ShipDesigns[selectedShipType].laserColor; applyGlow(ctx, ShipDesigns[selectedShipType].laserColor, 10); ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); clearGlow(ctx); }
+        ctx.restore(); 
+    });
+
+    if (gameState === "PLAYING" || gameState === "LEVEL_TRANSITION" || gameState === "PAUSED") {
+        if (invulnTimer <= 0 || frames % 10 < 5) {
+            ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.angle); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
+            if (playerShield > 0) { applyGlow(ctx, "#00ffff", 10); ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + (playerShield/100)*0.5})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.6, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
+            if (multishotTimer > 0) { applyGlow(ctx, "#ff00ff", 10); ctx.strokeStyle = `rgba(255, 0, 255, ${Math.abs(Math.sin(frames/10))})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.3, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
+        }
+    }
+    
+    ctx.textAlign = "center";
+    floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
+    
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+    
+    if (gameState === "PLAYING" && !isTouchDevice) {
+        ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
+        ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
+        ctx.restore();
+    }
+
+    ctx.restore();
+    drawMenuOverlays();
+}
+
+function drawMenuOverlays() {
+    ctx.textAlign = "center";
+    if (gameState === "PAUSED") { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#fff"; ctx.font = "bold 40px Courier New"; ctx.fillText("PAUSED", canvas.width/2, canvas.height/2); }
+    if (gameState === "LEVEL_TRANSITION") { ctx.fillStyle = `rgba(0,0,0,${1 - hyperspace/2})`; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#33ccff"; ctx.font = "bold 40px Courier New"; ctx.fillText("JUMPING TO SECTOR " + level, canvas.width/2, canvas.height/2); }
+    if (gameState === "GAMEOVER") { ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = "#ffcc00"; ctx.font = "bold 50px Courier New"; ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20); ctx.fillStyle = "white"; ctx.font = "20px Courier New"; ctx.fillText("Press 'R' to return", canvas.width / 2, canvas.height / 2 + 40); }
+    if (gameState === "VICTORY") { ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = "#33ff33"; ctx.font = "bold 50px Courier New"; ctx.fillText("VICTORY!", canvas.width / 2, canvas.height / 2 - 40); ctx.fillStyle = "white"; ctx.font = "20px Courier New"; ctx.fillText(`All sectors cleared. Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10); }
+}
