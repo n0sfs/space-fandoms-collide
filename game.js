@@ -415,10 +415,9 @@ const TargetDesigns = {
         draw: (ctx, r) => {
             ctx.fillStyle = "#3b4252"; ctx.strokeStyle = "#111"; ctx.lineWidth = 1;
             ctx.fillRect(-r*0.5, -r*0.5, r, r); ctx.strokeRect(-r*0.5, -r*0.5, r, r);
-            ctx.fillStyle = "#5c6bc0"; // Blue panels
+            ctx.fillStyle = "#5c6bc0"; 
             ctx.fillRect(-r*1.8, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(-r*1.8, -r*0.3, r*1.2, r*0.6);
             ctx.fillRect(r*0.6, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(r*0.6, -r*0.3, r*1.2, r*0.6);
-            // Panel lines
             ctx.strokeStyle = "#1a237e"; ctx.beginPath();
             for(let i=-r*1.6; i<-r*0.6; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
             for(let i=r*0.8; i<r*1.8; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
@@ -429,35 +428,79 @@ const TargetDesigns = {
     asteroid: {
         draw: (ctx, r, t) => {
             let pts = t.vertices;
+            
+            // Base Sand/Rock bedrock layer
+            ctx.fillStyle = "#8a7d65"; 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } ctx.closePath();
+            for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } 
+            ctx.closePath();
             
-            // Base dark rock layer
-            ctx.fillStyle = "#2a2723"; ctx.fill();
-            
-            ctx.save(); ctx.clip();
-            // Volumetric ambient lighting
-            let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r);
-            volGrad.addColorStop(0, "rgba(200, 190, 180, 0.3)"); 
-            volGrad.addColorStop(0.5, "rgba(50, 45, 40, 0.5)"); 
-            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");
-            ctx.fillStyle = volGrad; ctx.fill();
+            ctx.save();
+            ctx.clip(); 
+            ctx.fill();
 
-            // Inner Boulder Facets
+            // Underlying metallic noise & shadows
+            let baseGrad = ctx.createRadialGradient(-r*0.2, -r*0.2, 0, 0, 0, r*1.2);
+            baseGrad.addColorStop(0, "rgba(220, 220, 230, 0.4)"); 
+            baseGrad.addColorStop(0.5, "rgba(60, 50, 40, 0.6)"); 
+            baseGrad.addColorStop(1, "rgba(10, 10, 15, 0.95)"); 
+            ctx.fillStyle = baseGrad;
+            ctx.fill();
+
+            // Metallic and Rock Facets 
             if (t.facets) {
-                ctx.lineWidth = 1;
                 t.facets.forEach(f => {
-                    ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y);
+                    ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y); ctx.closePath();
                     ctx.fillStyle = f.color; ctx.fill();
-                    ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.stroke();
+                    if (f.isMetallic) {
+                        ctx.strokeStyle = "rgba(255, 255, 255, 0.6)"; 
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    } else {
+                        ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                });
+            }
+
+            // High-detail Craters
+            if (t.craters) {
+                t.craters.forEach(c => {
+                    let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
+                    craterGrad.addColorStop(0, "rgba(5, 5, 5, 0.95)"); 
+                    craterGrad.addColorStop(0.8, "rgba(40, 35, 30, 0.8)"); 
+                    craterGrad.addColorStop(1, "rgba(150, 140, 120, 0)"); 
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); 
+                    ctx.fillStyle = craterGrad; ctx.fill();
+
+                    // Radial striations inside crater
+                    ctx.strokeStyle = "rgba(200, 200, 200, 0.3)";
+                    ctx.lineWidth = 0.5;
+                    for(let a=0; a<Math.PI*2; a+=Math.PI/4) {
+                        ctx.beginPath();
+                        ctx.moveTo(c.x + Math.cos(a)*c.r*0.3, c.y + Math.sin(a)*c.r*0.3);
+                        ctx.lineTo(c.x + Math.cos(a)*c.r, c.y + Math.sin(a)*c.r);
+                        ctx.stroke();
+                    }
+
+                    // Bright metallic rim
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.8, Math.PI * 1.8); 
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
+                    
+                    // Shadow rim
+                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.2, Math.PI * 0.8); 
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)"; ctx.lineWidth = 2; ctx.stroke();
                 });
             }
             ctx.restore();
 
-            // Heavy rock outline
+            // Bold outer outline 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
-            ctx.closePath(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2.5; ctx.stroke();
+            ctx.closePath(); 
+            ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = 1; ctx.stroke();
         }
     }
 };
@@ -512,12 +555,12 @@ function startLevel() {
             let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3); 
             let boss = targets[targets.length - 1]; 
             boss.maxHp = Math.floor((20 + (level * 4)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.0 / diffMult; boss.chargeTimer = 0;
-            for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40, speedMod);
+            for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40 + Math.random()*20, speedMod);
         }
     } else {
         let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); 
         if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
-        for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 40, speedMod);
+        for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
         
         let numShips = Math.floor(Math.floor(level / 3) * diffMult);
         for (let i = 0; i < numShips; i++) {
@@ -532,34 +575,53 @@ function startLevel() {
 }
 
 function generateJaggedAsteroid(r) {
-    let vertices = []; let numPoints = 8 + Math.floor(Math.random() * 5);
-    for(let i=0; i<numPoints; i++) { let angle = (i / numPoints) * Math.PI * 2; let dist = r * (0.75 + Math.random() * 0.35); vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); }
-    
-    // Generate inner facets for chunky boulder look
-    let facets = [];
-    let numFacets = 3 + Math.floor(Math.random()*4);
-    for(let i=0; i<numFacets; i++) {
-        let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
-        let p1 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
-        let p2 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
-        let p3 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
-        // Vary rock color
-        let colVal = 30 + Math.floor(Math.random()*40);
-        let color = `rgba(${colVal}, ${colVal-5}, ${colVal-10}, 0.7)`;
-        facets.push({p1, p2, p3, color});
+    let vertices = [];
+    let numPoints = 12 + Math.floor(Math.random() * 8); 
+    let phase = Math.random() * Math.PI * 2;
+    let elongation = 0.6 + Math.random() * 0.4; 
+    let stretchAngle = Math.random() * Math.PI;
+
+    for (let i = 0; i < numPoints; i++) {
+        let angle = (i / numPoints) * Math.PI * 2;
+        let wave = Math.sin(angle * (2 + Math.random()*2) + phase) * 0.2;
+        let dist = r * (0.6 + Math.random() * 0.3 + wave);
+        let dx = Math.cos(angle) * dist;
+        let dy = Math.sin(angle) * dist * elongation;
+        let rx = dx * Math.cos(stretchAngle) - dy * Math.sin(stretchAngle);
+        let ry = dx * Math.sin(stretchAngle) + dy * Math.cos(stretchAngle);
+        vertices.push({ x: rx, y: ry });
     }
-    return { vertices, facets };
+
+    let craters = [];
+    let numCraters = Math.floor(Math.random() * 4) + (r > 30 ? 2 : 0);
+    for(let i=0; i<numCraters; i++) {
+        craters.push({ x: (Math.random()-0.5) * r * 1.2, y: (Math.random()-0.5) * r * 1.2, r: r * (0.1 + Math.random() * 0.3) });
+    }
+
+    let facets = [];
+    let numFacets = 5 + Math.floor(Math.random()*10);
+    for(let i=0; i<numFacets; i++) {
+        let cx = (Math.random()-0.5)*r*1.2; let cy = (Math.random()-0.5)*r*1.2;
+        let size = r * (0.2 + Math.random()*0.3);
+        let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
+        let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
+        let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
+        let isMetallic = Math.random() > 0.5;
+        let color = isMetallic ? `rgba(200, 210, 220, ${0.4 + Math.random()*0.4})` : `rgba(180, 160, 130, ${0.3 + Math.random()*0.4})`;
+        facets.push({p1, p2, p3, color, isMetallic});
+    }
+
+    return { vertices, craters, facets };
 }
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
     if (x === null) { do { x = Math.random() * canvas.width; y = Math.random() * canvas.height; } while (Math.hypot(ship.x - x, ship.y - y) < 200); }
     
-    // Random chance to spawn a Satellite instead of an asteroid
     if (type === "asteroid" && Math.random() < 0.1) { type = "satellite"; baseR = 25; }
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
-    let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 0.5, stunned: 0 };
+    let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 1.5, stunned: 0 };
     if (type === "boss_station" || type === "boss_mothership") t.rotSpeed = 0.2; 
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
     if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(baseR));
@@ -644,7 +706,6 @@ function damagePlayer(amt) {
     updateUI();
 }
 
-// --- 3D UPDATE LOOP ---
 function update3D(dt) {
     if (invulnTimer > 0) invulnTimer -= dt;
     if (nukeFlash > 0) nukeFlash -= dt * 2;
@@ -709,10 +770,9 @@ function update3D(dt) {
     for(let i=targets3D.length-1; i>=0; i--) {
         let t = targets3D[i];
         
-        // 3D Enemy Aggressive Tracking
         if (t.type === "tie_fighter") {
             let dx = camX - t.x; let dy = camY - t.y;
-            t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; // Steer head-on
+            t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; 
             t.fireTimer -= dt;
             if (t.fireTimer <= 0 && t.z < 2500) {
                 enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.8, vy: (camY - t.y)*0.8, vz: -1200 });
@@ -750,7 +810,6 @@ function update3D(dt) {
     stars3D.forEach(s => { s.z -= 1500 * dt; if (s.z < 10) { s.z = 3000; s.x = camX + (Math.random()-0.5)*4000; s.y = camY + (Math.random()-0.5)*4000; } });
 }
 
-// --- 2D UPDATE LOOP ---
 function update(dt) {
     let stats = ShipDesigns[selectedShipType].stats;
     ship.angle = Math.atan2(mouse.y - ship.y, mouse.x - ship.x);
@@ -926,7 +985,6 @@ function update(dt) {
     }
 }
 
-// --- 3D RENDER LOOP ---
 function render3D() {
     ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -972,20 +1030,18 @@ function render3D() {
         ctx.restore();
     });
 
-    // 1st Person HUD Overlay Frame
-    ctx.fillStyle = "#111"; // Frame color
-    ctx.beginPath(); // Top frame
+    ctx.fillStyle = "#111"; 
+    ctx.beginPath(); 
     ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
     ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
-    ctx.beginPath(); // Bottom frame
+    ctx.beginPath(); 
     ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
     ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
-    ctx.beginPath(); // Left strut
+    ctx.beginPath(); 
     ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
-    ctx.beginPath(); // Right strut
+    ctx.beginPath(); 
     ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
 
-    // Frame Outlines & Cockpit Details
     ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
 
@@ -1014,7 +1070,6 @@ function render3D() {
     drawMenuOverlays();
 }
 
-// --- STANDARD 2D RENDER LOOP ---
 function render() {
     ctx.fillStyle = `hsl(${level * 15}, 30%, 5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
