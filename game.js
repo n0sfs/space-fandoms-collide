@@ -51,7 +51,6 @@ function saveGameData() {
     updateMenuUI();
 }
 
-// RESTORED: Leaderboard save function
 function checkAndSaveScore() {
     highScores.push({ name: currentPlayerName, score: score });
     highScores.sort((a, b) => b.score - a.score);
@@ -112,7 +111,6 @@ function playSfx(type) {
     } catch (e) {} 
 }
 
-// --- PARTICLES & TEXT ---
 function spawnParticles(x, y, color, count, speedMod = 1) {
     for(let i=0; i<count; i++) {
         let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2;
@@ -413,38 +411,53 @@ const TargetDesigns = {
         }
     },
     tie_fighter: { draw: (ctx, r) => { ShipDesigns.tiefighter.draw(ctx, r, false); } },
+    satellite: {
+        draw: (ctx, r) => {
+            ctx.fillStyle = "#3b4252"; ctx.strokeStyle = "#111"; ctx.lineWidth = 1;
+            ctx.fillRect(-r*0.5, -r*0.5, r, r); ctx.strokeRect(-r*0.5, -r*0.5, r, r);
+            ctx.fillStyle = "#5c6bc0"; // Blue panels
+            ctx.fillRect(-r*1.8, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(-r*1.8, -r*0.3, r*1.2, r*0.6);
+            ctx.fillRect(r*0.6, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(r*0.6, -r*0.3, r*1.2, r*0.6);
+            // Panel lines
+            ctx.strokeStyle = "#1a237e"; ctx.beginPath();
+            for(let i=-r*1.6; i<-r*0.6; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
+            for(let i=r*0.8; i<r*1.8; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
+            ctx.stroke();
+            applyGlow(ctx, "#00ffcc", 10); ctx.fillStyle = "#e0f7fa"; ctx.beginPath(); ctx.arc(0,0, r*0.2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+        }
+    },
     asteroid: {
         draw: (ctx, r, t) => {
             let pts = t.vertices;
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); } ctx.closePath();
+            
+            // Base dark rock layer
+            ctx.fillStyle = "#2a2723"; ctx.fill();
+            
             ctx.save(); ctx.clip();
-            ctx.fillStyle = "#5c5346"; ctx.fill();
-            let volGrad = ctx.createLinearGradient(-r, -r, r, r);
-            volGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)"); volGrad.addColorStop(0.4, "rgba(255, 255, 255, 0)"); volGrad.addColorStop(0.7, "rgba(0, 0, 0, 0.5)"); volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");
+            // Volumetric ambient lighting
+            let volGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r);
+            volGrad.addColorStop(0, "rgba(200, 190, 180, 0.3)"); 
+            volGrad.addColorStop(0.5, "rgba(50, 45, 40, 0.5)"); 
+            volGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");
             ctx.fillStyle = volGrad; ctx.fill();
-            let cx = -r * 0.2; let cy = -r * 0.2; 
-            ctx.lineWidth = 1.5;
-            for (let i = 0; i < pts.length; i++) {
-                if (i % 2 === 0) {
-                    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(cx, cy);
-                    let angle = Math.atan2(pts[i].y, pts[i].x);
-                    ctx.strokeStyle = (angle > -Math.PI*0.75 && angle < Math.PI*0.25) ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.15)"; ctx.stroke();
-                }
-            }
-            if (t.craters) {
-                t.craters.forEach(c => {
-                    let craterGrad = ctx.createLinearGradient(c.x - c.r, c.y - c.r, c.x + c.r, c.y + c.r);
-                    craterGrad.addColorStop(0, "rgba(0,0,0,0.8)"); craterGrad.addColorStop(1, "rgba(255,255,255,0.1)");
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = craterGrad; ctx.fill();
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, Math.PI * 0.75, Math.PI * 1.75); ctx.strokeStyle = "rgba(255, 255, 255, 0.3)"; ctx.lineWidth = r > 20 ? 2 : 1; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, -Math.PI * 0.25, Math.PI * 0.75); ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.stroke();
+
+            // Inner Boulder Facets
+            if (t.facets) {
+                ctx.lineWidth = 1;
+                t.facets.forEach(f => {
+                    ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y);
+                    ctx.fillStyle = f.color; ctx.fill();
+                    ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.stroke();
                 });
             }
             ctx.restore();
+
+            // Heavy rock outline
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) { ctx.lineTo(pts[i].x, pts[i].y); }
-            ctx.closePath(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.closePath(); ctx.strokeStyle = "#111"; ctx.lineWidth = 2.5; ctx.stroke();
         }
     }
 };
@@ -521,14 +534,31 @@ function startLevel() {
 function generateJaggedAsteroid(r) {
     let vertices = []; let numPoints = 8 + Math.floor(Math.random() * 5);
     for(let i=0; i<numPoints; i++) { let angle = (i / numPoints) * Math.PI * 2; let dist = r * (0.75 + Math.random() * 0.35); vertices.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist }); }
-    let craters = []; if (r > 20) { craters.push({ x: (Math.random()-0.5)*r*0.5, y: (Math.random()-0.5)*r*0.5, r: r*0.2 + Math.random()*r*0.1 }); if (Math.random() > 0.5) craters.push({ x: (Math.random()-0.5)*r*0.6, y: (Math.random()-0.5)*r*0.6, r: r*0.1 + Math.random()*r*0.1 }); }
-    return { vertices, craters };
+    
+    // Generate inner facets for chunky boulder look
+    let facets = [];
+    let numFacets = 3 + Math.floor(Math.random()*4);
+    for(let i=0; i<numFacets; i++) {
+        let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
+        let p1 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
+        let p2 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
+        let p3 = {x: cx + (Math.random()-0.5)*r, y: cy + (Math.random()-0.5)*r};
+        // Vary rock color
+        let colVal = 30 + Math.floor(Math.random()*40);
+        let color = `rgba(${colVal}, ${colVal-5}, ${colVal-10}, 0.7)`;
+        facets.push({p1, p2, p3, color});
+    }
+    return { vertices, facets };
 }
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
     if (x === null) { do { x = Math.random() * canvas.width; y = Math.random() * canvas.height; } while (Math.hypot(ship.x - x, ship.y - y) < 200); }
-    let spdMult = type === "asteroid" ? 0.3 : 1.0;
+    
+    // Random chance to spawn a Satellite instead of an asteroid
+    if (type === "asteroid" && Math.random() < 0.1) { type = "satellite"; baseR = 25; }
+
+    let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
     let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 0.5, stunned: 0 };
     if (type === "boss_station" || type === "boss_mothership") t.rotSpeed = 0.2; 
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
@@ -537,12 +567,15 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
 }
 
 function spawnTarget3D() {
-    let isShip = Math.random() < 0.3; let type = isShip ? "tie_fighter" : "asteroid";
-    let r = isShip ? 20 : 40 + Math.random() * 40;
+    let rand = Math.random();
+    let type = "asteroid"; let r = 40 + Math.random() * 40;
+    if (rand < 0.1) { type = "satellite"; r = 25; }
+    else if (rand < 0.4) { type = "tie_fighter"; r = 20; }
+    
     let t = {
         type: type, x: camX + (Math.random() - 0.5) * 4000, y: camY + (Math.random() - 0.5) * 4000, z: 4000,
         r: r, vx: (Math.random() - 0.5) * 200, vy: (Math.random() - 0.5) * 200, vz: 800 + Math.random() * 400 + (level * 20),
-        angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 2, hp: isShip ? 1 : 2
+        angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 2, hp: (type==="tie_fighter"||type==="satellite") ? 1 : 2
     };
     if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(r));
     if (type === "tie_fighter") t.fireTimer = 1.0 + Math.random() * 2.0;
@@ -653,12 +686,7 @@ function update3D(dt) {
         let spawnRate = 0.03 + (level * 0.002);
         if (Math.random() < spawnRate) spawnTarget3D();
     } else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
-        // PROPER 3D EXIT LOGIC
-        level++; 
-        updateUI(); 
-        gameState = "LEVEL_TRANSITION"; 
-        hyperspace = 0; 
-        playSfx('powerup');
+        level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
         bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = [];
         return;
     }
@@ -680,16 +708,20 @@ function update3D(dt) {
 
     for(let i=targets3D.length-1; i>=0; i--) {
         let t = targets3D[i];
-        t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
-        if (t.hitFlash > 0) t.hitFlash -= dt;
-
+        
+        // 3D Enemy Aggressive Tracking
         if (t.type === "tie_fighter") {
+            let dx = camX - t.x; let dy = camY - t.y;
+            t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; // Steer head-on
             t.fireTimer -= dt;
-            if (t.fireTimer <= 0) {
-                enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.5, vy: (camY - t.y)*0.5, vz: -1000 });
-                t.fireTimer = 2.0; playSfx('enemyShoot');
+            if (t.fireTimer <= 0 && t.z < 2500) {
+                enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.8, vy: (camY - t.y)*0.8, vz: -1200 });
+                t.fireTimer = 1.5; playSfx('enemyShoot');
             }
         }
+
+        t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
+        if (t.hitFlash > 0) t.hitFlash -= dt;
 
         if (t.z < 50 && t.z > -50) {
             if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; }
@@ -706,7 +738,9 @@ function update3D(dt) {
                 bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0;
-                    score += 50 * combo; currentRunScrap += 2; updateUI();
+                    score += (t.type==="satellite" ? 75 : 50) * combo; 
+                    currentRunScrap += (t.type==="satellite" ? 5 : 2); 
+                    updateUI();
                     hit = true; break;
                 }
             }
@@ -811,7 +845,7 @@ function update(dt) {
 
     for (let i = targets.length - 1; i >= 0; i--) {
         let t1 = targets[i];
-        if (t1.type !== "asteroid" && !t1.type.startsWith("boss")) {
+        if (t1.type !== "asteroid" && t1.type !== "satellite" && !t1.type.startsWith("boss")) {
             let smashed = false;
             for (let j = 0; j < targets.length; j++) {
                 let t2 = targets[j];
@@ -847,7 +881,7 @@ function update(dt) {
             }
 
             if (Math.hypot(bullets[i].x - t.x, bullets[i].y - t.y) < (t.r + (bullets[i].r || 2))) {
-                if (bullets[i].isHack && t.type !== "asteroid") { t.stunned = 3.0; spawnText(t.x, t.y, "HACKED", "#0f0", 14); }
+                if (bullets[i].isHack && t.type !== "asteroid" && t.type !== "satellite") { t.stunned = 3.0; spawnText(t.x, t.y, "HACKED", "#0f0", 14); }
                 if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
                 
                 playSfx('hit');
@@ -856,7 +890,7 @@ function update(dt) {
                 }
                 
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
-                spawnParticles(t.x, t.y, t.type==="asteroid" ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
+                spawnParticles(t.x, t.y, (t.type==="asteroid"||t.type==="satellite") ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
                 spawnText(t.x, t.y, "DESTROYED", "#ff0000");
                 combo++; if(combo>10) combo=10; comboTimer = 4.0;
                 
@@ -865,6 +899,7 @@ function update(dt) {
                 else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); } 
                 else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); } 
                 else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); } 
+                else if (t.type === "satellite") { score += 75*combo; spawnScrap(t.x, t.y, 5); }
                 else if (t.type === "asteroid") { score += ((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
                 
                 targets.splice(j, 1); hit = true; break;
@@ -929,18 +964,38 @@ function render3D() {
         ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
         ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
         if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
-        else { if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); else TargetDesigns.asteroid.draw(ctx, t.r, t); }
+        else { 
+            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+            else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
+            else TargetDesigns.asteroid.draw(ctx, t.r, t); 
+        }
         ctx.restore();
     });
 
-    // 1st Person HUD Overlay
+    // 1st Person HUD Overlay Frame
+    ctx.fillStyle = "#111"; // Frame color
+    ctx.beginPath(); // Top frame
+    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
+    ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
+    ctx.beginPath(); // Bottom frame
+    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
+    ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
+    ctx.beginPath(); // Left strut
+    ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
+    ctx.beginPath(); // Right strut
+    ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
+
+    // Frame Outlines & Cockpit Details
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+
     ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
     ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
     ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
     
     ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
-    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, 40);
+    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, canvas.height*0.15);
     
     if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
     
@@ -997,6 +1052,7 @@ function render() {
         ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle); 
         if (t.stunned > 0) { ctx.translate((Math.random()-0.5)*5, (Math.random()-0.5)*5); } 
         if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+        else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
         else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t); 
         ctx.restore(); 
     });
