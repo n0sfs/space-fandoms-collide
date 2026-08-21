@@ -146,23 +146,34 @@ function playSfx(type) {
 
 // A short looping synth arpeggio that only plays while a run is active, gated by the same
 // mute flag as the sfx so it never needs its own on/off wiring beyond starting once at boot.
-const musicScale = [130.81, 155.56, 196.00, 130.81, 174.61, 196.00, 246.94, 196.00];
+// Switches to a faster, harsher, lower pattern during boss levels and hyperspace for tension.
+const musicScaleCalm = [130.81, 155.56, 196.00, 130.81, 174.61, 196.00, 246.94, 196.00];
+const musicScaleTense = [65.41, 65.41, 61.74, 65.41, 65.41, 69.30, 65.41, 58.27];
 let musicStep = 0;
-function playMusicNote(freq) {
+function isTenseContext() { return is3DMode || (level % 5 === 0); }
+function playMusicNote(freq, tense) {
     if (!audioCtx || muted) return;
     try {
         let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime;
-        osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, now);
-        gain.gain.setValueAtTime(0.0, now); gain.gain.linearRampToValueAtTime(0.045, now + 0.05); gain.gain.linearRampToValueAtTime(0.0, now + 0.5);
+        osc.type = tense ? 'sawtooth' : 'triangle'; osc.frequency.setValueAtTime(freq, now);
+        let peak = tense ? 0.07 : 0.045, dur = tense ? 0.28 : 0.5;
+        gain.gain.setValueAtTime(0.0, now); gain.gain.linearRampToValueAtTime(peak, now + 0.04); gain.gain.linearRampToValueAtTime(0.0, now + dur);
         osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(now); osc.stop(now + 0.5);
+        osc.start(now); osc.stop(now + dur);
     } catch(e) {}
 }
-setInterval(() => {
-    if (gameState !== "PLAYING" || muted) return;
-    playMusicNote(musicScale[musicStep % musicScale.length]);
-    musicStep++;
-}, 450);
+function scheduleMusic() {
+    if (gameState === "PLAYING" && !muted) {
+        let tense = isTenseContext();
+        let scale = tense ? musicScaleTense : musicScaleCalm;
+        playMusicNote(scale[musicStep % scale.length], tense);
+        musicStep++;
+        setTimeout(scheduleMusic, tense ? 240 : 450);
+    } else {
+        setTimeout(scheduleMusic, 450);
+    }
+}
+scheduleMusic();
 
 // --- HAPTICS / WAKE LOCK ---
 function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e) {} }
