@@ -1096,7 +1096,7 @@ function update(dt) {
 }
 
 function render3D() {
-    ctx.fillStyle = "#020202"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = `hsl(${level * 15}, 35%, 4%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
 
@@ -1140,19 +1140,36 @@ function render3D() {
         ctx.restore();
     });
 
-    ctx.fillStyle = "#111"; 
-    ctx.beginPath(); 
+    // Cockpit frame panels, gradient-shaded so the metal reads as curving toward the window
+    let topGrad = ctx.createLinearGradient(0, 0, 0, canvas.height*0.2);
+    topGrad.addColorStop(0, "#08080a"); topGrad.addColorStop(1, "#2e2e34");
+    ctx.fillStyle = topGrad;
+    ctx.beginPath();
     ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
     ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
-    ctx.beginPath(); 
+
+    let botGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height*0.8);
+    botGrad.addColorStop(0, "#08080a"); botGrad.addColorStop(1, "#2e2e34");
+    ctx.fillStyle = botGrad;
+    ctx.beginPath();
     ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
     ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
-    ctx.beginPath(); 
+
+    let leftGrad = ctx.createLinearGradient(0, 0, canvas.width*0.2, 0);
+    leftGrad.addColorStop(0, "#08080a"); leftGrad.addColorStop(1, "#2e2e34");
+    ctx.fillStyle = leftGrad;
+    ctx.beginPath();
     ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
-    ctx.beginPath(); 
+
+    let rightGrad = ctx.createLinearGradient(canvas.width, 0, canvas.width*0.8, 0);
+    rightGrad.addColorStop(0, "#08080a"); rightGrad.addColorStop(1, "#2e2e34");
+    ctx.fillStyle = rightGrad;
+    ctx.beginPath();
     ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
 
     ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.3)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
 
     ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
@@ -1160,10 +1177,20 @@ function render3D() {
     ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
     ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
     
-    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; ctx.font = "14px Courier";
-    ctx.fillText(`HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`, CX, canvas.height*0.15);
+    ctx.textAlign = "center";
+    let hudLabel = `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
+    ctx.font = "bold 15px Courier New";
+    let hudW = ctx.measureText(hudLabel).width;
+    ctx.fillStyle = "rgba(0, 20, 20, 0.5)"; ctx.fillRect(CX - hudW/2 - 10, canvas.height*0.15 - 16, hudW + 20, 22);
+    ctx.fillStyle = "rgba(0, 255, 255, 0.9)"; ctx.fillText(hudLabel, CX, canvas.height*0.15);
     
-    if (playerShield > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${0.05 + (playerShield/100)*0.1})`; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    if (playerShield > 0) {
+        // Edge-only vignette so the shield reads as a cue without washing out the whole scene.
+        let vign = ctx.createRadialGradient(CX, CY, canvas.height * 0.35, CX, CY, canvas.height * 0.8);
+        vign.addColorStop(0, "rgba(0, 255, 255, 0)");
+        vign.addColorStop(1, `rgba(0, 255, 255, ${0.08 + (playerShield / 100) * 0.14})`);
+        ctx.fillStyle = vign; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     
     ctx.textAlign = "center";
     floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
