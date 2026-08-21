@@ -497,16 +497,32 @@ const TargetDesigns = {
     satellite: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#00ffcc", 0.45);
-            ctx.fillStyle = "#3b4252"; ctx.strokeStyle = "#111"; ctx.lineWidth = 1;
-            ctx.fillRect(-r*0.5, -r*0.5, r, r); ctx.strokeRect(-r*0.5, -r*0.5, r, r);
-            ctx.fillStyle = "#5c6bc0"; 
+            // solar arrays: gradient-shaded cells with a thin frame rail
+            let panelGrad = ctx.createLinearGradient(0, -r*0.3, 0, r*0.3);
+            panelGrad.addColorStop(0, "#8c9eea"); panelGrad.addColorStop(0.5, "#33429e"); panelGrad.addColorStop(1, "#5c6bc0");
+            ctx.fillStyle = panelGrad; ctx.strokeStyle = "#0d1642"; ctx.lineWidth = 1.5;
             ctx.fillRect(-r*1.8, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(-r*1.8, -r*0.3, r*1.2, r*0.6);
             ctx.fillRect(r*0.6, -r*0.3, r*1.2, r*0.6); ctx.strokeRect(r*0.6, -r*0.3, r*1.2, r*0.6);
-            ctx.strokeStyle = "#1a237e"; ctx.beginPath();
+            ctx.strokeStyle = "rgba(15, 20, 60, 0.7)"; ctx.lineWidth = 0.75; ctx.beginPath();
             for(let i=-r*1.6; i<-r*0.6; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
             for(let i=r*0.8; i<r*1.8; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
+            ctx.moveTo(-r*1.8, 0); ctx.lineTo(-r*0.6, 0); ctx.moveTo(r*0.6, 0); ctx.lineTo(r*1.8, 0);
             ctx.stroke();
-            applyGlow(ctx, "#00ffcc", 10); ctx.fillStyle = "#e0f7fa"; ctx.beginPath(); ctx.arc(0,0, r*0.2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+            // bus body wrapped in gold MLI thermal foil, the classic satellite tell
+            let bodyGrad = ctx.createLinearGradient(-r*0.5, -r*0.5, r*0.5, r*0.5);
+            bodyGrad.addColorStop(0, "#ffe27a"); bodyGrad.addColorStop(0.5, "#c9971f"); bodyGrad.addColorStop(1, "#7a5c14");
+            ctx.fillStyle = bodyGrad; ctx.strokeStyle = "#3a2c08"; ctx.lineWidth = 1;
+            ctx.fillRect(-r*0.5, -r*0.5, r, r); ctx.strokeRect(-r*0.5, -r*0.5, r, r);
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.25)"; ctx.lineWidth = 0.75;
+            ctx.beginPath(); ctx.moveTo(-r*0.3, -r*0.4); ctx.lineTo(-r*0.05, -r*0.1); ctx.lineTo(-r*0.35, r*0.15); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(r*0.1, -r*0.35); ctx.lineTo(r*0.3, -r*0.05); ctx.stroke();
+            // antenna boom + dish
+            ctx.strokeStyle = "#999"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -r*0.5); ctx.lineTo(0, -r*0.95); ctx.stroke();
+            let dishGrad = ctx.createRadialGradient(0, -r*1.0, 0, 0, -r*1.0, r*0.35);
+            dishGrad.addColorStop(0, "#f5f5f5"); dishGrad.addColorStop(1, "#8a8a8a");
+            ctx.fillStyle = dishGrad; ctx.strokeStyle = "#555"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.ellipse(0, -r*1.0, r*0.32, r*0.2, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            applyGlow(ctx, "#00ffcc", 10); ctx.fillStyle = "#e0f7fa"; ctx.beginPath(); ctx.arc(0, 0, r*0.14, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
         }
     },
     asteroid: {
@@ -529,24 +545,21 @@ const TargetDesigns = {
             ctx.fillStyle = volGrad; ctx.fill();
 
             if (t.facets) {
-                ctx.lineWidth = 1;
                 t.facets.forEach(f => {
                     ctx.beginPath(); ctx.moveTo(f.p1.x, f.p1.y); ctx.lineTo(f.p2.x, f.p2.y); ctx.lineTo(f.p3.x, f.p3.y); ctx.closePath();
-                    ctx.fillStyle = f.color; ctx.fill(); ctx.strokeStyle = "rgba(0, 0, 0, 0.3)"; ctx.stroke();
+                    ctx.fillStyle = f.color; ctx.fill();
                 });
             }
 
             if (t.craters) {
                 t.craters.forEach(c => {
                     let cr = Math.max(1, c.r);
-                    let craterGrad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, cr);
-                    craterGrad.addColorStop(0, "rgba(10, 10, 10, 0.9)"); craterGrad.addColorStop(0.8, "rgba(50, 50, 50, 0.6)"); craterGrad.addColorStop(1, "rgba(100, 100, 100, 0)"); 
+                    let craterGrad = ctx.createRadialGradient(c.x - cr*0.2, c.y - cr*0.2, 0, c.x, c.y, cr);
+                    craterGrad.addColorStop(0, "rgba(15, 15, 15, 0.85)"); craterGrad.addColorStop(0.75, "rgba(40, 40, 40, 0.55)"); craterGrad.addColorStop(1, "rgba(80, 80, 80, 0)");
                     ctx.beginPath(); ctx.arc(c.x, c.y, cr, 0, Math.PI * 2); ctx.fillStyle = craterGrad; ctx.fill();
-
-                    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)"; ctx.lineWidth = 0.5;
-                    for(let a=0; a<Math.PI*2; a+=Math.PI/4) { ctx.beginPath(); ctx.moveTo(c.x + Math.cos(a)*cr*0.3, c.y + Math.sin(a)*cr*0.3); ctx.lineTo(c.x + Math.cos(a)*cr, c.y + Math.sin(a)*cr); ctx.stroke(); }
-                    ctx.beginPath(); ctx.arc(c.x, c.y, cr, Math.PI * 0.8, Math.PI * 1.8); ctx.strokeStyle = "rgba(255, 255, 255, 0.15)"; ctx.lineWidth = r > 20 ? 1.5 : 0.5; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(c.x, c.y, cr, -Math.PI * 0.2, Math.PI * 0.8); ctx.strokeStyle = "rgba(0, 0, 0, 0.6)"; ctx.lineWidth = 2; ctx.stroke();
+                    // single soft rim highlight on the lit side, no radiating spokes
+                    ctx.beginPath(); ctx.arc(c.x, c.y, cr * 0.92, Math.PI * 1.05, Math.PI * 1.75);
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)"; ctx.lineWidth = Math.max(0.5, cr * 0.12); ctx.stroke();
                 });
             }
             ctx.restore();
@@ -594,15 +607,16 @@ function generateJaggedAsteroid(r) {
     let darkGray = Math.max(5, baseGray - 25);
     let shadowColor = shade(darkGray);
 
+    // A few broad, soft shading patches (not sharp shards) to suggest mineral variation.
     let facets = [];
-    let numFacets = 4 + Math.floor(Math.random()*6);
+    let numFacets = 2 + Math.floor(Math.random()*3);
     for(let i=0; i<numFacets; i++) {
-        let cx = (Math.random()-0.5)*r; let cy = (Math.random()-0.5)*r;
-        let size = Math.max(1, r * (0.4 + Math.random()*0.4));
+        let cx = (Math.random()-0.5)*r*0.8; let cy = (Math.random()-0.5)*r*0.8;
+        let size = Math.max(1, r * (0.7 + Math.random()*0.5));
         let p1 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p2 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size}; let p3 = {x: cx + (Math.random()-0.5)*size, y: cy + (Math.random()-0.5)*size};
-        let fGray = baseGray + (Math.random() > 0.5 ? 14 : -14);
+        let fGray = baseGray + (Math.random() > 0.5 ? 10 : -10);
         let rgb = shade(Math.max(0, fGray));
-        let color = rgb.replace('rgb', 'rgba').replace(')', ', 0.55)');
+        let color = rgb.replace('rgb', 'rgba').replace(')', ', 0.3)');
         facets.push({p1, p2, p3, color});
     }
 
