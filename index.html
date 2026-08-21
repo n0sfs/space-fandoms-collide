@@ -19,38 +19,43 @@
             cursor: none; /* Hides default cursor for our custom crosshair */
         }
 
-        /* Touch Controls (mobile) */
-        #touchControls { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        body.touch-device #touchControls { display: block; }
+        /* Touch Controls (mobile) - laid out in a bar below the canvas so hands never cover the ship */
+        #touchControls {
+            display: none; position: relative; width: 100%; max-width: 800px; margin: 12px auto 0;
+            align-items: center; justify-content: space-between; padding: 0 10px; box-sizing: border-box;
+        }
+        body.touch-device #touchControls { display: flex; }
         #joystickZone {
-            position: absolute; left: 20px; bottom: 20px; width: 120px; height: 120px; border-radius: 50%;
-            background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(51, 204, 255, 0.4); pointer-events: auto; touch-action: none;
+            position: relative; width: 120px; height: 120px; border-radius: 50%; flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(51, 204, 255, 0.4); touch-action: none;
         }
         #joystickThumb {
             position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
             background: rgba(51, 204, 255, 0.5); border: 2px solid #33ccff; pointer-events: none;
         }
+        #rightControls { display: flex; align-items: center; gap: 20px; }
         #fireBtn {
-            position: absolute; right: 20px; bottom: 20px; width: 90px; height: 90px; border-radius: 50%;
+            width: 90px; height: 90px; border-radius: 50%; flex-shrink: 0;
             background: rgba(255, 51, 51, 0.2); border: 2px solid #ff3333; color: #ff3333;
             display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;
-            pointer-events: auto; touch-action: none; user-select: none;
+            touch-action: none; user-select: none;
         }
         #bombBtn {
-            position: absolute; right: 130px; bottom: 20px; width: 60px; height: 60px; border-radius: 50%;
+            width: 60px; height: 60px; border-radius: 50%; flex-shrink: 0;
             background: rgba(255, 204, 0, 0.2); border: 2px solid #ffcc00; color: #ffcc00;
             display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;
-            pointer-events: auto; touch-action: none; user-select: none;
+            touch-action: none; user-select: none;
         }
         #fireBtn.active { background: rgba(255, 51, 51, 0.5); }
         #bombBtn.active { background: rgba(255, 204, 0, 0.5); }
-        
+
         #pauseBtn {
-            position: absolute; top: 12px; right: 12px; width: 44px; height: 34px; border-radius: 6px;
+            display: none; position: absolute; top: 12px; right: 12px; width: 44px; height: 34px; border-radius: 6px;
             background: rgba(255, 204, 0, 0.15); border: 2px solid #ffcc00; color: #ffcc00;
-            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
-            pointer-events: auto; touch-action: none; user-select: none; cursor: pointer;
+            align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
+            touch-action: none; user-select: none; cursor: pointer;
         }
+        body.touch-device #pauseBtn { display: flex; }
 
         #ui {
             margin-bottom: 10px; font-size: 13px; font-weight: bold;
@@ -164,12 +169,7 @@
             <div style="position: relative;">
                 <canvas id="gameCanvas" width="800" height="600"></canvas>
 
-                <div id="touchControls">
-                    <div id="joystickZone"><div id="joystickThumb"></div></div>
-                    <div id="fireBtn">FIRE</div>
-                    <div id="bombBtn">NUKE</div>
-                    <div id="pauseBtn">II</div>
-                </div>
+                <div id="pauseBtn">II</div>
 
                 <!-- Main Menu -->
                 <div id="menuOverlay" class="overlay">
@@ -225,6 +225,14 @@
                     </div>
                 </div>
 
+            </div>
+
+            <div id="touchControls">
+                <div id="joystickZone"><div id="joystickThumb"></div></div>
+                <div id="rightControls">
+                    <div id="bombBtn">NUKE</div>
+                    <div id="fireBtn">FIRE</div>
+                </div>
             </div>
         </div>
 
