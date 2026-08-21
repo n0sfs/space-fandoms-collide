@@ -31,7 +31,6 @@ const playerNameInput = document.getElementById("playerName");
 const leaderboardList = document.getElementById("leaderboardList");
 const menuScrapEl = document.getElementById("menuScrap");
 
-const shipButtons = document.querySelectorAll(".ship-grid .ship-btn");
 const diffButtons = document.querySelectorAll(".diff-btn");
 const resumeBtn = document.getElementById("resumeBtn");
 const restartGameBtn = document.getElementById("restartGameBtn");
@@ -151,19 +150,6 @@ diffButtons.forEach(btn => {
     btn.addEventListener("click", diffAction); btn.addEventListener("touchstart", diffAction, { passive: false }); 
 });
 
-shipButtons.forEach(btn => { 
-    const startAction = (e) => { 
-        if(e) e.preventDefault(); 
-        initAudio(); 
-        try {
-            const shipChoice = btn.getAttribute("data-ship") || "xwing"; 
-            startGame(shipChoice); 
-        } catch(err) {
-            console.error("Start Game Error", err);
-        }
-    }; 
-    btn.addEventListener("click", startAction); btn.addEventListener("touchstart", startAction, { passive: false }); 
-});
 
 function togglePause() {
     if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); }
@@ -420,6 +406,80 @@ const ShipDesigns = {
         }
     }
 };
+
+// --- SHIP SELECT DROPDOWN ---
+const ShipMenuOrder = [
+    { id: "xwing", label: "X-Wing (Balanced)" },
+    { id: "falcon", label: "Falcon (Turret)" },
+    { id: "tiefighter", label: "TIE (Fast/Weak)" },
+    { id: "enterprise", label: "Enterprise (Heavy)" },
+    { id: "apollo", label: "Apollo (Drift)" },
+    { id: "serenity", label: "Serenity (Agile)" },
+    { id: "borg", label: "Borg Cube (360)" },
+    { id: "pelican", label: "Pelican (Shotgun)" },
+    { id: "tardis", label: "TARDIS (Sonic Wave)" },
+    { id: "viper", label: "Viper (Rapid)" },
+    { id: "nebuchadnezzar", label: "Nebuchadnezzar (EMP)" },
+    { id: "lightship", label: "Lightship (Trail)" },
+    { id: "milano", label: "Milano (Quad Blaster)" },
+    { id: "fsociety", label: "fsociety (Glitch Hack)" }
+];
+
+function renderShipIcon(shipId, size = 32) {
+    let c = document.createElement("canvas"); c.width = size; c.height = size;
+    let ictx = c.getContext("2d");
+    ictx.translate(size / 2, size / 2);
+    ShipDesigns[shipId].draw(ictx, size * 0.32, false);
+    return c.toDataURL();
+}
+
+const shipSelectCurrent = document.getElementById("shipSelectCurrent");
+const shipSelectList = document.getElementById("shipSelectList");
+const shipSelectIcon = document.getElementById("shipSelectIcon");
+const shipSelectLabel = document.getElementById("shipSelectLabel");
+const launchBtn = document.getElementById("launchBtn");
+
+function setMenuShip(shipId) {
+    selectedShipType = ShipDesigns[shipId] ? shipId : "xwing";
+    let entry = ShipMenuOrder.find(s => s.id === selectedShipType) || ShipMenuOrder[0];
+    if (shipSelectIcon) shipSelectIcon.src = renderShipIcon(selectedShipType);
+    if (shipSelectLabel) shipSelectLabel.textContent = entry.label;
+}
+
+if (shipSelectList) {
+    ShipMenuOrder.forEach(s => {
+        let opt = document.createElement("div");
+        opt.className = "ship-option"; opt.setAttribute("data-ship", s.id);
+        let img = document.createElement("img"); img.src = renderShipIcon(s.id); img.alt = "";
+        let span = document.createElement("span"); span.textContent = s.label;
+        opt.appendChild(img); opt.appendChild(span);
+        const chooseAction = (e) => { if(e) e.preventDefault(); initAudio(); setMenuShip(s.id); shipSelectList.classList.add("hidden"); };
+        opt.addEventListener("click", chooseAction); opt.addEventListener("touchstart", chooseAction, { passive: false });
+        shipSelectList.appendChild(opt);
+    });
+}
+
+if (shipSelectCurrent) {
+    const toggleAction = (e) => { if(e) e.preventDefault(); initAudio(); if (shipSelectList) shipSelectList.classList.toggle("hidden"); };
+    shipSelectCurrent.addEventListener("click", toggleAction); shipSelectCurrent.addEventListener("touchstart", toggleAction, { passive: false });
+}
+
+document.addEventListener("click", (e) => {
+    if (shipSelectList && shipSelectCurrent && !shipSelectList.classList.contains("hidden")) {
+        if (!shipSelectList.contains(e.target) && !shipSelectCurrent.contains(e.target)) shipSelectList.classList.add("hidden");
+    }
+});
+
+if (launchBtn) {
+    const launchAction = (e) => {
+        if(e) e.preventDefault();
+        initAudio();
+        try { startGame(selectedShipType); } catch(err) { console.error("Start Game Error", err); }
+    };
+    launchBtn.addEventListener("click", launchAction); launchBtn.addEventListener("touchstart", launchAction, { passive: false });
+}
+
+setMenuShip(selectedShipType);
 
 // --- TARGETS ---
 const TargetDesigns = {

@@ -114,14 +114,36 @@
         .diff-btn:hover { background: #222; color: #fff; }
         .diff-btn.active { background: #ffcc00; color: #000; border-color: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.5); }
 
-        .ship-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px;
-            max-height: 200px; overflow-y: auto; padding-right: 5px;
-        }
-        .ship-grid::-webkit-scrollbar { width: 6px; }
-        .ship-grid::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
         .ship-btn { background: #222; color: white; border: 1px solid #555; padding: 10px 5px; font-size: 12px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .ship-btn:hover { background: #ffcc00; color: black; border-color: white; }
+
+        /* Ship Select Dropdown */
+        .ship-select-wrap { position: relative; margin-bottom: 15px; }
+        .ship-select-current {
+            display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;
+            background: #222; color: white; border: 1px solid #555; border-radius: 4px;
+            padding: 8px 12px; font-family: inherit; font-size: 13px; text-transform: uppercase;
+            cursor: pointer; transition: 0.2s;
+        }
+        .ship-select-current:hover { border-color: #ffcc00; }
+        .ship-select-current img { width: 28px; height: 28px; flex-shrink: 0; }
+        .ship-select-label { flex: 1; text-align: left; }
+        .ship-select-arrow { color: #888; font-size: 10px; }
+        .ship-select-list {
+            position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5;
+            background: #171717; border: 1px solid #555; border-radius: 4px;
+            max-height: 220px; overflow-y: auto; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+        }
+        .ship-select-list::-webkit-scrollbar { width: 6px; }
+        .ship-select-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        .ship-option {
+            display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+            font-size: 12px; text-transform: uppercase; cursor: pointer; transition: 0.15s;
+        }
+        .ship-option:hover { background: #ffcc00; color: #000; }
+        .ship-option img { width: 24px; height: 24px; flex-shrink: 0; }
+        .launch-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(255, 204, 0, 0.15); border-color: #ffcc00; color: #ffcc00; }
+        .launch-btn:hover { background: #ffcc00; color: #000; }
         
         /* Upgrade Shop */
         #upgradeShop { background: rgba(255,0,255,0.1); border: 1px dashed #ff00ff; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
@@ -220,22 +242,15 @@
                         </div>
                     </div>
 
-                    <div class="ship-grid" id="shipGrid">
-                        <button class="ship-btn" data-ship="xwing">X-Wing (Balanced)</button>
-                        <button class="ship-btn" data-ship="falcon">Falcon (Turret)</button>
-                        <button class="ship-btn" data-ship="tiefighter">TIE (Fast/Weak)</button>
-                        <button class="ship-btn" data-ship="enterprise">Enterprise (Heavy)</button>
-                        <button class="ship-btn" data-ship="apollo">Apollo (Drift)</button>
-                        <button class="ship-btn" data-ship="serenity">Serenity (Agile)</button>
-                        <button class="ship-btn" data-ship="borg">Borg Cube (360)</button>
-                        <button class="ship-btn" data-ship="pelican">Pelican (Shotgun)</button>
-                        <button class="ship-btn" data-ship="tardis">TARDIS (Sonic Wave)</button>
-                        <button class="ship-btn" data-ship="viper">Viper (Rapid)</button>
-                        <button class="ship-btn" data-ship="nebuchadnezzar">Nebuchadnezzar (EMP)</button>
-                        <button class="ship-btn" data-ship="lightship">Lightship (Trail)</button>
-                        <button class="ship-btn" data-ship="milano">Milano (Quad Blaster)</button>
-                        <button class="ship-btn" data-ship="fsociety">fsociety (Glitch Hack)</button>
+                    <div class="ship-select-wrap" id="shipSelectWrap">
+                        <button type="button" class="ship-select-current" id="shipSelectCurrent">
+                            <img id="shipSelectIcon" alt="">
+                            <span class="ship-select-label" id="shipSelectLabel">X-Wing (Balanced)</span>
+                            <span class="ship-select-arrow">▾</span>
+                        </button>
+                        <div class="ship-select-list hidden" id="shipSelectList"></div>
                     </div>
+                    <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
 
                     <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
                 </div>
