@@ -50,19 +50,21 @@ function loadSaveData() {
     try {
         let storedScores = localStorage.getItem("sfc_scores"); if (storedScores) highScores = JSON.parse(storedScores);
         let storedScrap = localStorage.getItem("sfc_scrap"); if (storedScrap) totalScrap = parseInt(storedScrap) || 0;
-        let storedUpg = localStorage.getItem("sfc_upgrades"); 
+        let storedUpg = localStorage.getItem("sfc_upgrades");
         if (storedUpg) {
             let parsed = JSON.parse(storedUpg);
             upgrades.bombs = parsed.bombs || 0;
             upgrades.speed = parsed.speed || 0;
             upgrades.shield = parsed.shield || 0;
         }
+        let storedMuted = localStorage.getItem("sfc_muted"); if (storedMuted !== null) muted = (storedMuted === "1");
     } catch(e) {
         localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
     }
     if (!highScores || highScores.length === 0) {
         highScores = [{name: "VDR", score: 10000}, {name: "LUK", score: 8000}, {name: "HAN", score: 6000}, {name: "BBA", score: 4000}, {name: "RD2", score: 2000}];
     }
+    updateMuteUI();
     updateMenuUI();
 }
 
@@ -117,9 +119,10 @@ for(let i=0; i<250; i++) stars3D.push({x: (Math.random()-0.5)*5000, y: (Math.ran
 
 // --- AUDIO ---
 let audioCtx;
+let muted = false;
 function initAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {} }
 function playSfx(type) {
-    if (!audioCtx) return;
+    if (!audioCtx || muted) return;
     try {
         let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime; osc.connect(gain); gain.connect(audioCtx.destination);
         if (type === 'shoot') { osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); } 
@@ -162,10 +165,17 @@ shipButtons.forEach(btn => {
     btn.addEventListener("click", startAction); btn.addEventListener("touchstart", startAction, { passive: false }); 
 });
 
-function togglePause() { 
-    if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); } 
-    else if (gameState === "PAUSED") { gameState = "PLAYING"; if (pauseOverlay) pauseOverlay.classList.add("hidden"); lastTime = performance.now(); } 
+function togglePause() {
+    if (gameState === "PLAYING") { gameState = "PAUSED"; if (pauseOverlay) pauseOverlay.classList.remove("hidden"); }
+    else if (gameState === "PAUSED") { gameState = "PLAYING"; if (pauseOverlay) pauseOverlay.classList.add("hidden"); lastTime = performance.now(); }
 }
+
+function toggleMute() {
+    muted = !muted;
+    try { localStorage.setItem("sfc_muted", muted ? "1" : "0"); } catch(e) {}
+    updateMuteUI();
+}
+function updateMuteUI() { if (muteBtn) { muteBtn.textContent = muted ? "🔇" : "🔊"; muteBtn.classList.toggle("active", muted); } }
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
@@ -196,6 +206,7 @@ const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0
 if (isTouchDevice) document.body.classList.add("touch-device");
 const joystickZone = document.getElementById("joystickZone"); const joystickThumb = document.getElementById("joystickThumb");
 const fireBtn = document.getElementById("fireBtn"); const pauseBtn = document.getElementById("pauseBtn"); const bombBtn = document.getElementById("bombBtn");
+const muteBtn = document.getElementById("muteBtn");
 const JOYSTICK_MAX = 45, JOYSTICK_DEADZONE = 10, JOYSTICK_AIM_DIST = 200;
 let joystickTouchId = null, joystickCenter = { x: 0, y: 0 };
 
@@ -219,6 +230,7 @@ if (fireBtn) {
 }
 if (bombBtn) { bombBtn.addEventListener("touchstart", (e) => { e.preventDefault(); bombBtn.classList.add("active"); triggerNuke(); }, { passive: false }); bombBtn.addEventListener("touchend", () => bombBtn.classList.remove("active")); }
 if (pauseBtn) { const pauseBtnAction = (e) => { if(e) e.preventDefault(); togglePause(); }; pauseBtn.addEventListener("touchstart", pauseBtnAction, { passive: false }); pauseBtn.addEventListener("mousedown", pauseBtnAction); }
+if (muteBtn) { const muteBtnAction = (e) => { if(e) e.preventDefault(); initAudio(); toggleMute(); }; muteBtn.addEventListener("touchstart", muteBtnAction, { passive: false }); muteBtn.addEventListener("click", muteBtnAction); }
 
 // Boot Game Settings
 updateDifficultyUI();
@@ -567,8 +579,9 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
     let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 1.5, stunned: 0 };
-    if (type === "boss_station" || type === "boss_mothership") t.rotSpeed = 0.2; 
+    if (type === "boss_station" || type === "boss_mothership") t.rotSpeed = 0.2;
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
+    if (type === "sentinel") t.chaseSpeed = 3 * speedMod;
     if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(baseR));
     targets.push(t);
 }
@@ -684,7 +697,10 @@ function startLevel() {
             if (rand < 0.3) spawnTarget("tie_fighter", 15, speedMod * 1.2); else if (rand < 0.6) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
             else if (rand < 0.8) spawnTarget("tie_advanced", 18, speedMod * 0.9); else spawnTarget("star_destroyer", 50, speedMod);
         }
-        if (level > 4) { for(let i=0; i<Math.floor(level/4); i++) spawnTarget("sentinel", 12, speedMod * 1.5); }
+        if (level > 4) {
+            let numSentinels = Math.floor(Math.floor(level / 4) * diffMult); if (numSentinels < 1 && gameDifficulty !== 'easy') numSentinels = 1;
+            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
+        }
     }
 }
 
@@ -868,7 +884,7 @@ function update(dt) {
         t.x += t.xv; t.y += t.yv; t.angle += t.rotSpeed * dt; 
         if (t.hitFlash > 0) t.hitFlash -= dt;
 
-        if (t.type === "sentinel") { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); t.angle = angToPlayer; t.xv = Math.cos(angToPlayer) * 3; t.yv = Math.sin(angToPlayer) * 3; }
+        if (t.type === "sentinel") { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); t.angle = angToPlayer; let spd = t.chaseSpeed || 3; t.xv = Math.cos(angToPlayer) * spd; t.yv = Math.sin(angToPlayer) * spd; }
         if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); enemyBullets.push({ x: t.x, y: t.y, xv: 6 * Math.cos(angToPlayer), yv: 6 * Math.sin(angToPlayer), range: canvas.width * 0.8 }); playSfx('enemyShoot'); t.fireTimer = 2.0; } }
         if (t.type === "boss_station") {
             if (t.spawnTimer === undefined) t.spawnTimer = 2; t.spawnTimer -= dt;
@@ -889,7 +905,12 @@ function update(dt) {
                 if (t2.type === "asteroid") {
                     let dist = Math.hypot(t1.x - t2.x, t1.y - t2.y);
                     if (dist < t1.r + t2.r + 100) { t1.xv += (t1.x - t2.x) * 0.8 * dt; t1.yv += (t1.y - t2.y) * 0.8 * dt; }
-                    if (dist < t1.r + t2.r * 0.8) { smashed = true; spawnParticles(t1.x, t1.y, "#ff5500", 20); playSfx('boom'); break; }
+                    if (dist < t1.r + t2.r * 0.8) {
+                        smashed = true; spawnParticles(t1.x, t1.y, "#ff5500", 20); playSfx('boom');
+                        spawnText(t1.x, t1.y, "CRUSHED", "#ff5500", 14);
+                        score += 15 * combo; spawnScrap(t1.x, t1.y, 1); updateUI();
+                        break;
+                    }
                 }
             }
             if (smashed) { targets.splice(i, 1); }
