@@ -61,18 +61,17 @@
         #bombBtn.active { background: rgba(255, 204, 0, 0.5); }
 
         #pauseBtn {
-            display: none; position: absolute; top: 12px; right: 12px; width: 44px; height: 34px; border-radius: 6px;
+            width: 34px; height: 26px; border-radius: 6px;
             background: rgba(255, 204, 0, 0.15); border: 2px solid #ffcc00; color: #ffcc00;
-            align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;
             touch-action: none; user-select: none; cursor: pointer;
         }
-        body.touch-device #pauseBtn { display: flex; }
 
         #muteBtn {
-            position: absolute; top: 12px; right: 64px; width: 44px; height: 34px; border-radius: 6px;
+            width: 34px; height: 26px; border-radius: 6px;
             background: rgba(51, 204, 255, 0.15); border: 2px solid #33ccff; color: #33ccff;
-            display: flex; align-items: center; justify-content: center; font-size: 16px;
-            user-select: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 14px;
+            touch-action: none; user-select: none; cursor: pointer;
         }
         #muteBtn.active { background: rgba(255, 51, 51, 0.15); border-color: #ff3333; color: #ff3333; }
 
@@ -188,13 +187,14 @@
                     <span>SCRAP: <span id="scrapDisplay" class="scrap-text">0</span></span>
                     <span>SCORE: <span id="scoreDisplay" class="status-text">0</span></span>
                 </div>
+                <div class="ui-row" style="gap: 8px;">
+                    <div id="muteBtn">🔊</div>
+                    <div id="pauseBtn">II</div>
+                </div>
             </div>
-            
+
             <div style="position: relative;">
                 <canvas id="gameCanvas" width="800" height="600"></canvas>
-
-                <div id="muteBtn">🔊</div>
-                <div id="pauseBtn">II</div>
 
                 <!-- Main Menu -->
                 <div id="menuOverlay" class="overlay">
