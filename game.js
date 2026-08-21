@@ -129,7 +129,8 @@ function playSfx(type) {
         else if (type === 'hit') { osc.type = 'square'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(100, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
         else if (type === 'nuke') { osc.type = 'square'; osc.frequency.setValueAtTime(50, now); osc.frequency.linearRampToValueAtTime(20, now + 1.5); gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0, now + 1.5); osc.start(now); osc.stop(now + 1.5); }
         else if (type === 'scrap') { osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.linearRampToValueAtTime(1200, now + 0.05); gain.gain.setValueAtTime(0.05, now); gain.gain.linearRampToValueAtTime(0, now + 0.05); osc.start(now); osc.stop(now + 0.05); }
-    } catch (e) {} 
+        else if (type === 'glitch') { osc.type = 'square'; osc.frequency.setValueAtTime(60, now); osc.frequency.setValueAtTime(300, now + 0.03); osc.frequency.setValueAtTime(40, now + 0.06); osc.frequency.setValueAtTime(250, now + 0.09); gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12); osc.start(now); osc.stop(now + 0.12); }
+    } catch (e) {}
 }
 
 function spawnParticles(x, y, color, count, speedMod = 1) { for(let i=0; i<count; i++) { let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2; particles.push({ x: x || canvas.width/2, y: y || canvas.height/2, xv: Math.cos(angle) * speed, yv: Math.sin(angle) * speed, life: 1.0, color: color, size: Math.random() * 2 + 1 }); } }
@@ -173,8 +174,12 @@ if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio()
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
     bombs--; playSfx('nuke'); nukeFlash = 1.0; shake = 30; 
-    if (is3DMode) { enemyBullets3D = []; targets3D.forEach(t => t.hp = -1); } 
-    else { enemyBullets = []; targets.forEach(t => { if (t.hp !== undefined) { t.hp -= 50; spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; }); }
+    if (is3DMode) { enemyBullets3D = []; targets3D = []; }
+    else {
+        enemyBullets = [];
+        targets.forEach(t => { if (t.hp !== undefined) { t.hp = Math.max(1, t.hp - 50); spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; });
+        targets = targets.filter(t => t.hp === undefined || t.hp > 0);
+    }
     updateUI();
 }
 
