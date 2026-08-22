@@ -64,7 +64,7 @@ function loadSaveData() {
         }
         let storedMuted = localStorage.getItem("sfc_muted"); if (storedMuted !== null) muted = (storedMuted === "1");
         lastShipId = localStorage.getItem("sfc_lastShip");
-        if (typeof campaignComplete !== "undefined") campaignComplete = localStorage.getItem("sfc_campaignComplete") === "1";
+        if (typeof shipBuilderUnlocked !== "undefined") shipBuilderUnlocked = localStorage.getItem("sfc_shipBuilderUnlocked") === "1";
         let storedCustomShip = localStorage.getItem("sfc_customShip");
         if (storedCustomShip && typeof registerCustomShip === "function") registerCustomShip(JSON.parse(storedCustomShip));
     } catch(e) {
@@ -632,7 +632,7 @@ function buildCustomShipDesign(cfg) {
 }
 
 let customShipConfig = null;
-let campaignComplete = false;
+let shipBuilderUnlocked = false;
 
 function registerCustomShip(cfg) {
     customShipConfig = cfg;
@@ -646,9 +646,9 @@ function registerCustomShip(cfg) {
 
 function updateBuilderUnlockUI() {
     if (!shipBuilderBtn) return;
-    shipBuilderBtn.disabled = !campaignComplete;
-    shipBuilderBtn.textContent = campaignComplete ? "🛠️ SHIP BUILDER" : "🛠️ SHIP BUILDER (LOCKED)";
-    shipBuilderBtn.title = campaignComplete ? "" : "Beat Level 25 to unlock";
+    shipBuilderBtn.disabled = !shipBuilderUnlocked;
+    shipBuilderBtn.textContent = shipBuilderUnlocked ? "🛠️ SHIP BUILDER" : "🛠️ SHIP BUILDER (LOCKED)";
+    shipBuilderBtn.title = shipBuilderUnlocked ? "" : "Reach Level 20 to unlock";
 }
 
 const shipBuilderBtn = document.getElementById("shipBuilderBtn");
@@ -757,7 +757,7 @@ if (builderPower) builderPower.addEventListener("input", () => { clampBuilderPoi
 if (builderNameInput) builderNameInput.addEventListener("input", renderBuilderPreview);
 
 function openBuilder() {
-    if (!campaignComplete) return;
+    if (!shipBuilderUnlocked) return;
     applyBuilderConfig(customShipConfig || defaultBuilderConfig());
     if (builderDeleteBtn) builderDeleteBtn.classList.toggle("hidden", !customShipConfig);
     if (menuOverlay) menuOverlay.classList.add("hidden");
@@ -1146,13 +1146,13 @@ function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
-    if (level === 26) {
-        spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16);
-        if (!campaignComplete) {
-            campaignComplete = true;
-            try { localStorage.setItem("sfc_campaignComplete", "1"); } catch(e) {}
-            updateBuilderUnlockUI();
-        }
+    if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); }
+
+    if (level === 20 && !shipBuilderUnlocked) {
+        shipBuilderUnlocked = true;
+        try { localStorage.setItem("sfc_shipBuilderUnlocked", "1"); } catch(e) {}
+        updateBuilderUnlockUI();
+        spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
     }
 
     is3DMode = (level % 7 === 0);

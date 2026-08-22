@@ -11,7 +11,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **Hostile AI & Multi-Stage Bosses:** Dodge hostile tracking fire from TIE Advanced fighters, survive the Level 15 Sentinel Swarm, take down shielded Motherships and Superlasers, and break a coordinated Hive Swarm — a boss made of dozens of linked minions orbiting a queen who enrages the survivors when she falls.
 * **Retro 8-Bit Audio:** A custom JavaScript audio synthesizer dynamically generates all sound effects (lasers, explosions, powerups) without needing external audio files.
 * **Responsive Touch Controls:** Automatically detects mobile devices and renders an on-screen joystick, fire button, and nuke detonator.
-* **Ship Builder (unlocked after beating Level 25):** Design your own ship — pick a hull silhouette, hull and laser colors, and allocate a 9-point budget across Speed, Fire Rate, and Power. It's saved locally and flies alongside the 14 stock ships in the selector.
+* **Ship Builder (unlocked at Level 20):** Design your own ship — pick a hull silhouette, hull and laser colors, and allocate a 9-point budget across Speed, Fire Rate, and Power. It's saved locally and flies alongside the 14 stock ships in the selector.
 
 ## 🕹️ Flight Manual
 **Desktop:**
