@@ -64,6 +64,9 @@ function loadSaveData() {
         }
         let storedMuted = localStorage.getItem("sfc_muted"); if (storedMuted !== null) muted = (storedMuted === "1");
         lastShipId = localStorage.getItem("sfc_lastShip");
+        if (typeof campaignComplete !== "undefined") campaignComplete = localStorage.getItem("sfc_campaignComplete") === "1";
+        let storedCustomShip = localStorage.getItem("sfc_customShip");
+        if (storedCustomShip && typeof registerCustomShip === "function") registerCustomShip(JSON.parse(storedCustomShip));
     } catch(e) {
         localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
     }
@@ -72,6 +75,7 @@ function loadSaveData() {
     }
     updateMuteUI();
     updateMenuUI();
+    if (typeof updateBuilderUnlockUI === "function") updateBuilderUnlockUI();
     if (lastShipId && typeof setMenuShip === "function") setMenuShip(lastShipId);
     maybeShowFirstRunHint();
 }
@@ -225,7 +229,11 @@ function triggerNuke() {
     if (is3DMode) { enemyBullets3D = []; targets3D = []; }
     else {
         enemyBullets = [];
-        targets.forEach(t => { if (t.hp !== undefined) { t.hp = Math.max(1, t.hp - 50); spawnText(t.x, t.y, "-50", "#ffcc00", 24); } else t.hp = -1; });
+        targets.forEach(t => {
+            let isTrueBoss = t.type.startsWith("boss") || t.isQueen;
+            if (t.hp !== undefined && isTrueBoss) { t.hp = Math.max(1, t.hp - 50); spawnText(t.x, t.y, "-50", "#ffcc00", 24); }
+            else t.hp = -1;
+        });
         targets = targets.filter(t => t.hp === undefined || t.hp > 0);
     }
     updateUI();
@@ -496,7 +504,9 @@ function setMenuShip(shipId) {
     if (shipSelectLabel) shipSelectLabel.textContent = entry.label;
 }
 
-if (shipSelectList) {
+function rebuildShipDropdown() {
+    if (!shipSelectList) return;
+    shipSelectList.innerHTML = "";
     ShipMenuOrder.forEach(s => {
         let opt = document.createElement("div");
         opt.className = "ship-option"; opt.setAttribute("data-ship", s.id);
@@ -508,6 +518,7 @@ if (shipSelectList) {
         shipSelectList.appendChild(opt);
     });
 }
+rebuildShipDropdown();
 
 if (shipSelectCurrent) {
     const toggleAction = (e) => { if(e) e.preventDefault(); initAudio(); if (shipSelectList) shipSelectList.classList.toggle("hidden"); };
@@ -540,6 +551,249 @@ function maybeShowFirstRunHint() {
     const closeBtn = document.getElementById("firstRunHintClose");
     if (closeBtn) closeBtn.addEventListener("click", dismiss);
     if (launchBtn) launchBtn.addEventListener("click", dismiss, { once: true });
+}
+
+// --- SHIP BUILDER (unlocked after beating level 25) ---
+function shadeColor(hex, amt) {
+    let num = parseInt((hex || "#888888").replace("#", ""), 16);
+    let r = Math.min(255, Math.max(0, (num >> 16) + amt));
+    let g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + amt));
+    let b = Math.min(255, Math.max(0, (num & 0xff) + amt));
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+const BuilderShapes = {
+    dart: { label: "Dart", draw: (ctx, r, hull, accent, thrusting) => {
+        popHalo(ctx, r, accent);
+        let grad = ctx.createLinearGradient(-r, 0, r, 0); grad.addColorStop(0, shadeColor(hull, -50)); grad.addColorStop(1, shadeColor(hull, 40));
+        ctx.fillStyle = grad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(r*1.4, 0); ctx.lineTo(-r*0.3, -r*0.25); ctx.lineTo(-r*1.1, -r*0.7); ctx.lineTo(-r*0.55, -r*0.15);
+        ctx.lineTo(-r*0.55, r*0.15); ctx.lineTo(-r*1.1, r*0.7); ctx.lineTo(-r*0.3, r*0.25); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(r*0.35, 0, r*0.15, 0, Math.PI*2); ctx.fill();
+        if (thrusting) { applyGlow(ctx, accent, 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*1.0, -r*0.4, 3, 0, Math.PI*2); ctx.arc(-r*1.0, r*0.4, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
+    } },
+    wing: { label: "Wing", draw: (ctx, r, hull, accent, thrusting) => {
+        popHalo(ctx, r, accent);
+        let grad = ctx.createLinearGradient(-r, -r, r, r); grad.addColorStop(0, shadeColor(hull, 40)); grad.addColorStop(1, shadeColor(hull, -40));
+        ctx.fillStyle = grad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(r*1.3, 0); ctx.lineTo(-r*0.2, -r*1.1); ctx.lineTo(-r*0.9, -r*0.9); ctx.lineTo(-r*0.4, -r*0.15);
+        ctx.lineTo(-r*0.9, r*0.9); ctx.lineTo(-r*0.2, r*1.1); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#112233"; ctx.beginPath(); ctx.ellipse(r*0.2, 0, r*0.3, r*0.12, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(-r*0.1, 0, r*0.13, 0, Math.PI*2); ctx.fill();
+        if (thrusting) { applyGlow(ctx, accent, 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*0.85, -r*0.85, 3, 0, Math.PI*2); ctx.arc(-r*0.85, r*0.85, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
+    } },
+    saucer: { label: "Saucer", draw: (ctx, r, hull, accent, thrusting) => {
+        popHalo(ctx, r, accent);
+        let grad = ctx.createRadialGradient(-r*0.2, -r*0.2, r*0.1, 0, 0, r); grad.addColorStop(0, shadeColor(hull, 50)); grad.addColorStop(1, shadeColor(hull, -40));
+        ctx.fillStyle = grad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(0, 0, r*1.1, r*0.55, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = shadeColor(hull, 20); ctx.beginPath(); ctx.ellipse(0, -r*0.15, r*0.5, r*0.35, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(0, -r*0.15, r*0.15, 0, Math.PI*2); ctx.fill();
+        if (thrusting) { applyGlow(ctx, accent, 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*1.0, 0, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
+    } },
+    block: { label: "Block", draw: (ctx, r, hull, accent, thrusting) => {
+        popHalo(ctx, r, accent);
+        let grad = ctx.createLinearGradient(-r, 0, r, 0); grad.addColorStop(0, shadeColor(hull, -30)); grad.addColorStop(1, shadeColor(hull, 30));
+        ctx.fillStyle = grad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5;
+        ctx.fillRect(-r*1.1, -r*0.5, r*1.9, r*1.0); ctx.strokeRect(-r*1.1, -r*0.5, r*1.9, r*1.0);
+        ctx.fillStyle = shadeColor(hull, -10); ctx.beginPath(); ctx.moveTo(r*0.8, -r*0.5); ctx.lineTo(r*1.3, 0); ctx.lineTo(r*0.8, r*0.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(0, 0, r*0.16, 0, Math.PI*2); ctx.fill();
+        if (thrusting) { applyGlow(ctx, accent, 15); ctx.fillStyle = "#fff"; ctx.fillRect(-r*1.15, -r*0.4, 4, r*0.3); ctx.fillRect(-r*1.15, r*0.1, 4, r*0.3); clearGlow(ctx); }
+    } }
+};
+
+function computeCustomStats(speedLv, rateLv, powerLv) {
+    let thrust = 4 + speedLv;
+    let fireRate = Math.max(0.15, 0.75 - rateLv * 0.11);
+    let heat = 10 + powerLv * 4;
+    let bulletCount = powerLv >= 5 ? 3 : (powerLv >= 3 ? 2 : 1);
+    return { thrust, fireRate, heat, bulletCount };
+}
+
+function buildCustomShipDesign(cfg) {
+    const shape = BuilderShapes[cfg.shape] || BuilderShapes.dart;
+    const s = computeCustomStats(cfg.speedLv, cfg.rateLv, cfg.powerLv);
+    return {
+        name: cfg.name || "CUSTOM",
+        laserColor: cfg.laserColor,
+        stats: { thrust: s.thrust, fric: 0.97, fireRate: s.fireRate, heat: s.heat },
+        fire: () => {
+            if (s.bulletCount === 1) bullets.push(createBolt(0));
+            else if (s.bulletCount === 2) { bullets.push(createBolt(-0.12)); bullets.push(createBolt(0.12)); }
+            else { bullets.push(createBolt(-0.2)); bullets.push(createBolt(0)); bullets.push(createBolt(0.2)); }
+            playSfx('shoot');
+        },
+        draw: (ctx, r, thrusting) => shape.draw(ctx, r, cfg.hullColor, cfg.laserColor, thrusting)
+    };
+}
+
+let customShipConfig = null;
+let campaignComplete = false;
+
+function registerCustomShip(cfg) {
+    customShipConfig = cfg;
+    ShipDesigns.custom = buildCustomShipDesign(cfg);
+    let entry = ShipMenuOrder.find(s => s.id === "custom");
+    let label = `${cfg.name || "CUSTOM"} (Custom)`;
+    if (entry) entry.label = label; else ShipMenuOrder.push({ id: "custom", label });
+    rebuildShipDropdown();
+    if (selectedShipType === "custom") setMenuShip("custom");
+}
+
+function updateBuilderUnlockUI() {
+    if (!shipBuilderBtn) return;
+    shipBuilderBtn.disabled = !campaignComplete;
+    shipBuilderBtn.textContent = campaignComplete ? "🛠️ SHIP BUILDER" : "🛠️ SHIP BUILDER (LOCKED)";
+    shipBuilderBtn.title = campaignComplete ? "" : "Beat Level 25 to unlock";
+}
+
+const shipBuilderBtn = document.getElementById("shipBuilderBtn");
+const builderOverlay = document.getElementById("builderOverlay");
+const builderPreview = document.getElementById("builderPreview");
+const builderPreviewCtx = builderPreview ? builderPreview.getContext("2d") : null;
+const builderNameInput = document.getElementById("builderName");
+const builderShapesEl = document.getElementById("builderShapes");
+const builderHullColor = document.getElementById("builderHullColor");
+const builderLaserColor = document.getElementById("builderLaserColor");
+const builderSpeed = document.getElementById("builderSpeed");
+const builderRate = document.getElementById("builderRate");
+const builderPower = document.getElementById("builderPower");
+const builderSpeedVal = document.getElementById("builderSpeedVal");
+const builderRateVal = document.getElementById("builderRateVal");
+const builderPowerVal = document.getElementById("builderPowerVal");
+const builderPointsEl = document.getElementById("builderPoints");
+const builderSaveBtn = document.getElementById("builderSaveBtn");
+const builderDeleteBtn = document.getElementById("builderDeleteBtn");
+const builderBackBtn = document.getElementById("builderBackBtn");
+
+const BUILDER_BUDGET = 9;
+let builderShape = "dart";
+
+function defaultBuilderConfig() {
+    return { name: "CUSTOM", shape: "dart", hullColor: "#8899aa", laserColor: "#33ccff", speedLv: 3, rateLv: 3, powerLv: 3 };
+}
+
+function getBuilderConfig() {
+    return {
+        name: (builderNameInput && builderNameInput.value.trim()) || "CUSTOM",
+        shape: builderShape,
+        hullColor: builderHullColor ? builderHullColor.value : "#8899aa",
+        laserColor: builderLaserColor ? builderLaserColor.value : "#33ccff",
+        speedLv: builderSpeed ? parseInt(builderSpeed.value) : 3,
+        rateLv: builderRate ? parseInt(builderRate.value) : 3,
+        powerLv: builderPower ? parseInt(builderPower.value) : 3
+    };
+}
+
+function applyBuilderConfig(cfg) {
+    if (builderNameInput) builderNameInput.value = cfg.name;
+    builderShape = cfg.shape;
+    if (builderHullColor) builderHullColor.value = cfg.hullColor;
+    if (builderLaserColor) builderLaserColor.value = cfg.laserColor;
+    if (builderSpeed) builderSpeed.value = cfg.speedLv;
+    if (builderRate) builderRate.value = cfg.rateLv;
+    if (builderPower) builderPower.value = cfg.powerLv;
+    refreshBuilderUI();
+}
+
+function clampBuilderPoints(changed) {
+    let s = parseInt(builderSpeed.value), r = parseInt(builderRate.value), p = parseInt(builderPower.value);
+    let total = s + r + p;
+    if (total > BUILDER_BUDGET) {
+        let over = total - BUILDER_BUDGET;
+        if (changed === 'speed') s = Math.max(1, s - over);
+        else if (changed === 'rate') r = Math.max(1, r - over);
+        else if (changed === 'power') p = Math.max(1, p - over);
+        builderSpeed.value = s; builderRate.value = r; builderPower.value = p;
+    }
+}
+
+function renderBuilderPreview() {
+    if (!builderPreviewCtx) return;
+    builderPreviewCtx.clearRect(0, 0, builderPreview.width, builderPreview.height);
+    let cfg = getBuilderConfig();
+    let shape = BuilderShapes[cfg.shape] || BuilderShapes.dart;
+    builderPreviewCtx.save();
+    builderPreviewCtx.translate(builderPreview.width / 2, builderPreview.height / 2);
+    shape.draw(builderPreviewCtx, 35, cfg.hullColor, cfg.laserColor, true);
+    builderPreviewCtx.restore();
+}
+
+function refreshBuilderUI() {
+    if (!builderSpeed || !builderRate || !builderPower) return;
+    let s = parseInt(builderSpeed.value), r = parseInt(builderRate.value), p = parseInt(builderPower.value);
+    if (builderSpeedVal) builderSpeedVal.textContent = s;
+    if (builderRateVal) builderRateVal.textContent = r;
+    if (builderPowerVal) builderPowerVal.textContent = p;
+    if (builderPointsEl) builderPointsEl.textContent = `POINTS LEFT: ${BUILDER_BUDGET - (s + r + p)}/${BUILDER_BUDGET}`;
+    if (builderShapesEl) Array.from(builderShapesEl.children).forEach(btn => btn.classList.toggle("active", btn.getAttribute("data-shape") === builderShape));
+    renderBuilderPreview();
+}
+
+if (builderShapesEl) {
+    Object.keys(BuilderShapes).forEach(id => {
+        let btn = document.createElement("div");
+        btn.className = "builder-shape-btn"; btn.setAttribute("data-shape", id);
+        let img = document.createElement("img");
+        let c = document.createElement("canvas"); c.width = 32; c.height = 32;
+        let ic = c.getContext("2d"); ic.translate(16, 16); BuilderShapes[id].draw(ic, 10, "#8899aa", "#33ccff", false);
+        img.src = c.toDataURL();
+        let span = document.createElement("span"); span.textContent = BuilderShapes[id].label;
+        btn.appendChild(img); btn.appendChild(span);
+        const chooseShape = (e) => { if(e) e.preventDefault(); initAudio(); builderShape = id; refreshBuilderUI(); };
+        btn.addEventListener("click", chooseShape); btn.addEventListener("touchstart", chooseShape, { passive: false });
+        builderShapesEl.appendChild(btn);
+    });
+}
+
+[builderHullColor, builderLaserColor].forEach(el => { if (el) el.addEventListener("input", renderBuilderPreview); });
+if (builderSpeed) builderSpeed.addEventListener("input", () => { clampBuilderPoints('speed'); refreshBuilderUI(); });
+if (builderRate) builderRate.addEventListener("input", () => { clampBuilderPoints('rate'); refreshBuilderUI(); });
+if (builderPower) builderPower.addEventListener("input", () => { clampBuilderPoints('power'); refreshBuilderUI(); });
+if (builderNameInput) builderNameInput.addEventListener("input", renderBuilderPreview);
+
+function openBuilder() {
+    if (!campaignComplete) return;
+    applyBuilderConfig(customShipConfig || defaultBuilderConfig());
+    if (builderDeleteBtn) builderDeleteBtn.classList.toggle("hidden", !customShipConfig);
+    if (menuOverlay) menuOverlay.classList.add("hidden");
+    if (builderOverlay) builderOverlay.classList.remove("hidden");
+}
+function closeBuilder() {
+    if (builderOverlay) builderOverlay.classList.add("hidden");
+    if (menuOverlay) menuOverlay.classList.remove("hidden");
+}
+
+if (shipBuilderBtn) { const openAction = (e) => { if(e) e.preventDefault(); initAudio(); openBuilder(); }; shipBuilderBtn.addEventListener("click", openAction); shipBuilderBtn.addEventListener("touchstart", openAction, { passive: false }); }
+if (builderBackBtn) { const backAction = (e) => { if(e) e.preventDefault(); initAudio(); closeBuilder(); }; builderBackBtn.addEventListener("click", backAction); builderBackBtn.addEventListener("touchstart", backAction, { passive: false }); }
+if (builderSaveBtn) {
+    const saveAction = (e) => {
+        if(e) e.preventDefault(); initAudio();
+        let cfg = getBuilderConfig();
+        try { localStorage.setItem("sfc_customShip", JSON.stringify(cfg)); } catch(err) {}
+        registerCustomShip(cfg);
+        setMenuShip("custom");
+        closeBuilder();
+    };
+    builderSaveBtn.addEventListener("click", saveAction); builderSaveBtn.addEventListener("touchstart", saveAction, { passive: false });
+}
+if (builderDeleteBtn) {
+    const deleteAction = (e) => {
+        if(e) e.preventDefault(); initAudio();
+        customShipConfig = null;
+        try { localStorage.removeItem("sfc_customShip"); } catch(err) {}
+        delete ShipDesigns.custom;
+        let idx = ShipMenuOrder.findIndex(s => s.id === "custom");
+        if (idx !== -1) ShipMenuOrder.splice(idx, 1);
+        rebuildShipDropdown();
+        if (selectedShipType === "custom") setMenuShip("xwing");
+        closeBuilder();
+    };
+    builderDeleteBtn.addEventListener("click", deleteAction); builderDeleteBtn.addEventListener("touchstart", deleteAction, { passive: false });
 }
 
 // Boot Game Settings
@@ -877,7 +1131,7 @@ function startGame(shipId) {
     if (menuOverlay) menuOverlay.classList.add("hidden");
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
 
-    score = 0; level = 1; currentRunScrap = 0;
+    score = 0; level = 1; currentRunScrap = 0; lives = 3;
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
     combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
@@ -892,7 +1146,14 @@ function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
-    if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); }
+    if (level === 26) {
+        spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16);
+        if (!campaignComplete) {
+            campaignComplete = true;
+            try { localStorage.setItem("sfc_campaignComplete", "1"); } catch(e) {}
+            updateBuilderUnlockUI();
+        }
+    }
 
     is3DMode = (level % 7 === 0);
     hiveSwarmActive = false;
