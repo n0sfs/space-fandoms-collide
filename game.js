@@ -24,6 +24,9 @@ const heatEl = document.getElementById("heatDisplay");
 const comboEl = document.getElementById("comboDisplay");
 const scrapEl = document.getElementById("scrapDisplay");
 const statusEl = document.getElementById("statusDisplay");
+const swarmBarEl = document.getElementById("swarmBar");
+const swarmCountEl = document.getElementById("swarmCount");
+const swarmTotalEl = document.getElementById("swarmTotal");
 
 const menuOverlay = document.getElementById("menuOverlay");
 const pauseOverlay = document.getElementById("pauseOverlay");
@@ -120,6 +123,7 @@ let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI /
 
 // --- 3D STATE VARIABLES ---
 let is3DMode = false, levelTimer3D = 0;
+let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged = false;
 const FOV = 400;
 let camX = 0, camY = 0;
 let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
@@ -213,7 +217,7 @@ function updateMuteUI() { if (muteBtn) { muteBtn.textContent = muted ? "🔇" : 
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; if (swarmBarEl) swarmBarEl.classList.add("hidden"); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -604,6 +608,22 @@ const TargetDesigns = {
             ctx.beginPath(); ctx.moveTo(-r*0.5, r*0.3); ctx.lineTo(-r - Math.random()*r*0.5, r*0.8); ctx.stroke();
         }
     },
+    hive_minion: {
+        draw: (ctx, r, t) => {
+            let isQueen = t && t.isQueen;
+            popHalo(ctx, r, isQueen ? "#ff33ff" : "#cc33ff", isQueen ? 0.6 : 0.4);
+            let hullGrad = ctx.createLinearGradient(-r, 0, r, 0);
+            hullGrad.addColorStop(0, isQueen ? "#4a0a55" : "#2a0a30"); hullGrad.addColorStop(1, isQueen ? "#cc33ff" : "#7a2a8a");
+            ctx.fillStyle = hullGrad; ctx.strokeStyle = "#1a0020"; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(r*1.1, 0); ctx.lineTo(-r*0.4, -r*0.8); ctx.lineTo(-r*0.7, 0); ctx.lineTo(-r*0.4, r*0.8); ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            applyGlow(ctx, isQueen ? "#ff66ff" : "#cc33ff", isQueen ? 12 : 6);
+            ctx.fillStyle = isQueen ? "#ffccff" : "#ee99ff"; ctx.beginPath(); ctx.arc(0, 0, isQueen ? r*0.28 : r*0.18, 0, Math.PI*2); ctx.fill();
+            clearGlow(ctx);
+            if (isQueen) { ctx.strokeStyle = "rgba(255, 102, 255, 0.5)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, r*1.3, 0, Math.PI*2); ctx.stroke(); }
+        }
+    },
     tie_advanced: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#ff0000", 0.5);
@@ -816,6 +836,17 @@ function updateUI() {
     if (rapidFireTimer > 0) pTxt.push(`RAPID ${Math.ceil(rapidFireTimer)}s`);
     if (slowmoTimer > 0) pTxt.push(`SLOW ${Math.ceil(slowmoTimer)}s`);
     if (statusEl) { statusEl.innerText = pTxt.length ? pTxt.join(" ") : "—"; statusEl.style.color = pTxt.length ? "#ff00ff" : "#555"; }
+
+    if (swarmBarEl) {
+        if (hiveSwarmActive) {
+            let remaining = targets.filter(t => t.type === "hive_minion").length;
+            swarmBarEl.classList.remove("hidden");
+            if (swarmCountEl) swarmCountEl.innerText = remaining;
+            if (swarmTotalEl) swarmTotalEl.innerText = hiveSwarmTotal;
+        } else {
+            swarmBarEl.classList.add("hidden");
+        }
+    }
 }
 
 function damagePlayer(amt) {
@@ -864,10 +895,12 @@ function startLevel() {
     if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); }
 
     is3DMode = (level % 7 === 0);
+    hiveSwarmActive = false;
 
     if (is3DMode) {
         levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0;
         spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40); spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
+        updateUI();
         return;
     }
 
@@ -878,6 +911,21 @@ function startLevel() {
     if (level % 5 === 0 && !is3DMode) {
         if (level % 15 === 0) {
             let numSentinels = Math.floor(40 * diffMult); for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
+        } else if (level % 25 === 0) {
+            let numMinions = Math.floor((12 + level * 0.3) * diffMult);
+            let queenIndex = Math.floor(Math.random() * numMinions);
+            for (let i = 0; i < numMinions; i++) {
+                let ang = (i / numMinions) * Math.PI * 2;
+                let dist = 250 + Math.random() * 60;
+                let sx = canvas.width/2 + Math.cos(ang) * dist;
+                let sy = canvas.height/2 + Math.sin(ang) * dist;
+                spawnTarget("hive_minion", i === queenIndex ? 20 : 13, speedMod * 1.1, sx, sy);
+                let m = targets[targets.length - 1];
+                if (i === queenIndex) { m.isQueen = true; m.hp = Math.floor((10 + level * 0.5) * diffMult); m.maxHp = m.hp; }
+                else { m.hp = 1; m.maxHp = 1; }
+            }
+            hiveSwarmActive = true; hiveSwarmTotal = numMinions; hiveFireTimer = 2.5; hiveEnraged = false;
+            spawnText(canvas.width/2, canvas.height/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
         } else if (level % 20 === 0) {
             let bossR = 90 + (level * 1.0); spawnTarget("boss_dreadnought", bossR, speedMod * 0.15);
             let boss = targets[targets.length - 1];
@@ -908,6 +956,7 @@ function startLevel() {
             for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
         }
     }
+    updateUI();
 }
 
 for(let i=0; i<8; i++) spawnTarget("asteroid", 40, 2.0);
@@ -1112,8 +1161,38 @@ function update(dt) {
                 [-0.6, -0.3, 0, 0.3, 0.6].forEach(off => enemyBullets.push({ x: t.x, y: t.y, xv: 7*Math.cos(angToPlayer+off), yv: 7*Math.sin(angToPlayer+off), range: canvas.width }));
             }
         }
+        if (t.type === "hive_minion") {
+            // Orbit the player rather than rush straight in, so the swarm reads as a coordinated
+            // ring rather than a mob piling into melee range.
+            let dx = ship.x - t.x, dy = ship.y - t.y;
+            let distToPlayer = Math.hypot(dx, dy) || 1;
+            let angToPlayer = Math.atan2(dy, dx);
+            let preferredDist = t.isQueen ? 220 : 160;
+            let approachAng = distToPlayer > preferredDist ? angToPlayer : angToPlayer + Math.PI;
+            let tangentAng = angToPlayer + Math.PI / 2;
+            let vx = Math.cos(approachAng) * 0.45 + Math.cos(tangentAng) * 0.55;
+            let vy = Math.sin(approachAng) * 0.45 + Math.sin(tangentAng) * 0.55;
+            let norm = Math.hypot(vx, vy) || 1;
+            let spd = (t.isQueen ? 1.7 : 2.1) * (hiveEnraged ? 1.6 : 1.0);
+            t.xv = (vx / norm) * spd; t.yv = (vy / norm) * spd; t.angle = angToPlayer;
+        }
         wrap(t);
     });
+
+    if (hiveSwarmActive) {
+        hiveFireTimer -= dt;
+        if (hiveFireTimer <= 0) {
+            let minions = targets.filter(m => m.type === "hive_minion");
+            if (minions.length > 0) {
+                playSfx('enemyShoot'); shake += 4;
+                minions.forEach(m => { let ang = Math.atan2(ship.y - m.y, ship.x - m.x); enemyBullets.push({ x: m.x, y: m.y, xv: 6 * Math.cos(ang), yv: 6 * Math.sin(ang), range: canvas.width * 0.8 }); });
+            }
+            hiveFireTimer = hiveEnraged ? 1.6 : 2.6;
+        }
+        if (!hiveEnraged && targets.some(m => m.type === "hive_minion") && !targets.some(m => m.type === "hive_minion" && m.isQueen)) {
+            hiveEnraged = true; shake += 15; spawnText(ship.x, ship.y - 40, "HIVE ENRAGED!", "#ff0000", 20); playSfx('glitch');
+        }
+    }
 
     for (let i = targets.length - 1; i >= 0; i--) {
         let t1 = targets[i];
@@ -1175,8 +1254,13 @@ function update(dt) {
                 if (t.type === "boss_station" || t.type === "boss_mothership" || t.type === "boss_dreadnought") { score += 1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
                 else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); } 
                 else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); } 
-                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); } 
+                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); }
                 else if (t.type === "satellite") { score += 75*combo; spawnScrap(t.x, t.y, 5); }
+                else if (t.type === "hive_minion") {
+                    if (t.isQueen) { score += 300*combo; spawnScrap(t.x, t.y, 4); shake = 15; }
+                    else { score += 20*combo; spawnScrap(t.x, t.y, 1); }
+                    if (targets.length === 1) { score += 1200*combo; shake = 25; spawnText(t.x, t.y - 20, "SWARM DEFEATED!", "#ff33ff", 20); }
+                }
                 else if (t.type === "asteroid") { score += ((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
                 
                 targets.splice(j, 1); hit = true; break;
@@ -1331,7 +1415,7 @@ function render() {
 
     if (gameState === "PLAYING") {
         targets.forEach(t => {
-            if (t.type.startsWith("boss") || t.type === "tie_advanced" || t.type === "sentinel") {
+            if (t.type.startsWith("boss") || t.type === "tie_advanced" || t.type === "sentinel" || t.isQueen) {
                 let dist = Math.hypot(ship.x - t.x, ship.y - t.y);
                 if (dist > canvas.width/2) {
                     let ang = Math.atan2(t.y - ship.y, t.x - ship.x);

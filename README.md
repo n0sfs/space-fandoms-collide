@@ -8,7 +8,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **14 Unique Ships:** Pilot everything from an X-Wing and the Millennium Falcon to the TARDIS, the Nebuchadnezzar, and a glitching fsociety terminal.
 * **Custom Flight & Weapon Physics:** Every ship has unique stats (Thrust, Friction, Fire Rate) and weapons (e.g., EMP blasts, shotgun lasers, light ribbons, and quad-blasters).
 * **Progressive Difficulty Scaling:** Choose Easy, Moderate, or Hard to dynamically scale enemy speed, spawn rates, and boss health.
-* **Hostile AI & Multi-Stage Bosses:** Dodge hostile tracking fire from TIE Advanced fighters, survive the Level 15 Sentinel Swarm, and take down shielded Motherships and Superlasers.
+* **Hostile AI & Multi-Stage Bosses:** Dodge hostile tracking fire from TIE Advanced fighters, survive the Level 15 Sentinel Swarm, take down shielded Motherships and Superlasers, and break a coordinated Hive Swarm — a boss made of dozens of linked minions orbiting a queen who enrages the survivors when she falls.
 * **Retro 8-Bit Audio:** A custom JavaScript audio synthesizer dynamically generates all sound effects (lasers, explosions, powerups) without needing external audio files.
 * **Responsive Touch Controls:** Automatically detects mobile devices and renders an on-screen joystick, fire button, and nuke detonator.
 
