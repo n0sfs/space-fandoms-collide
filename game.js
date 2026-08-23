@@ -1252,12 +1252,25 @@ function update3D(dt) {
 
     let stats = ShipDesigns[selectedShipType].stats;
     let speed = stats.thrust * 100 * (1 + (upgrades.speed * 0.05));
+
+    // Primary control: the ship eases toward wherever the reticle points, same "aim = fly there"
+    // feel as the 2D mode's mouse-thrust, and it works on mobile through the same joystick input
+    // that already drives mouse.x/y (WASD panning alone left touch players unable to dodge at all).
+    let strafeRange = 900 + stats.thrust * 40;
+    let targetX = ((mouse.x - canvas.width / 2) / (canvas.width / 2)) * strafeRange;
+    let targetY = ((mouse.y - canvas.height / 2) / (canvas.height / 2)) * strafeRange;
+    let followRate = Math.min(1, dt * 5);
+    camX += (targetX - camX) * followRate;
+    camY += (targetY - camY) * followRate;
+
+    // Secondary: optional keyboard nudge for desktop players who like fine WASD control on top.
     if (keys["ArrowUp"] || keys["KeyW"]) camY -= speed * dt;
     if (keys["ArrowDown"] || keys["KeyS"]) camY += speed * dt;
     if (keys["ArrowLeft"] || keys["KeyA"]) camX -= speed * dt;
     if (keys["ArrowRight"] || keys["KeyD"]) camX += speed * dt;
-    
-    camX = Math.max(-3000, Math.min(3000, camX)); camY = Math.max(-3000, Math.min(3000, camY));
+
+    let strafeLimit = strafeRange * 1.3;
+    camX = Math.max(-strafeLimit, Math.min(strafeLimit, camX)); camY = Math.max(-strafeLimit, Math.min(strafeLimit, camY));
 
     if (fireCooldown > 0) fireCooldown -= dt;
     if ((keys["Space"] || mouse.leftDown) && fireCooldown <= 0 && !overheated) {
@@ -1278,7 +1291,7 @@ function update3D(dt) {
     if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
 
     levelTimer3D -= dt;
-    if (levelTimer3D > 0) { let spawnRate = 0.03 + (level * 0.002); if (Math.random() < spawnRate) spawnTarget3D(); } 
+    if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); } 
     else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
         level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
         bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
@@ -1607,6 +1620,27 @@ function render3D() {
     ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
     ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
 
+    // Dashboard instrument cluster set into the bottom console: two live gauges (shield/heat)
+    // flanking a row of ambient blinking lights, so the frame reads as a cockpit, not just a border.
+    let dashY = canvas.height * 0.9, dashCX = canvas.width / 2;
+    [-1, 1].forEach(side => {
+        let gx = dashCX + side * canvas.width * 0.16;
+        ctx.save(); ctx.translate(gx, dashY);
+        ctx.fillStyle = "#0a0a0c"; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.stroke();
+        let val = side < 0 ? (playerShield / playerMaxShield) : (heat / 100);
+        let needleAng = -Math.PI*0.75 + Math.max(0, Math.min(1, val)) * Math.PI*1.5;
+        ctx.strokeStyle = side < 0 ? "#00ffff" : (overheated ? "#ff0000" : "#ffaa00"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(needleAng)*12, Math.sin(needleAng)*12); ctx.stroke();
+        ctx.restore();
+    });
+    for (let i = 0; i < 5; i++) {
+        let lx = dashCX - 60 + i*30;
+        let on = Math.sin(frames*0.05 + i*1.3) > 0.3;
+        ctx.fillStyle = on ? "#33ff66" : "#113322";
+        ctx.beginPath(); ctx.arc(lx, dashY - 26, 3.5, 0, Math.PI*2); ctx.fill();
+    }
+
     let leftGrad = ctx.createLinearGradient(0, 0, canvas.width*0.2, 0);
     leftGrad.addColorStop(0, "#08080a"); leftGrad.addColorStop(1, "#2e2e34");
     ctx.fillStyle = leftGrad;
@@ -1628,7 +1662,28 @@ function render3D() {
     ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
     ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
     ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
-    
+
+    // Targeting-frame corner brackets at the window opening, a common cockpit-HUD tell
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.55)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    [[0.2, 0.2, 1, 1], [0.8, 0.2, -1, 1], [0.1, 0.8, 1, -1], [0.9, 0.8, -1, -1]].forEach(([fx, fy, dx, dy]) => {
+        let x = canvas.width*fx, y = canvas.height*fy;
+        ctx.beginPath(); ctx.moveTo(x, y + dy*20); ctx.lineTo(x, y); ctx.lineTo(x + dx*20, y); ctx.stroke();
+    });
+    ctx.lineCap = "butt";
+
+    // Soft diagonal canopy-glass glare, clipped to the window opening
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2);
+    ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath();
+    ctx.clip();
+    let reflGrad = ctx.createLinearGradient(canvas.width*0.1, canvas.height*0.1, canvas.width*0.55, canvas.height*0.55);
+    reflGrad.addColorStop(0, "rgba(255, 255, 255, 0.09)");
+    reflGrad.addColorStop(0.18, "rgba(255, 255, 255, 0.02)");
+    reflGrad.addColorStop(0.32, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = reflGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
     ctx.textAlign = "center";
     let hudLabel = `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
     ctx.font = "bold 15px Courier New";
