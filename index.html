@@ -179,6 +179,19 @@
         .builder-stat-row span:last-child { width: 16px; text-align: center; }
         #builderPoints { text-align: center; font-size: 12px; color: #ffcc00; margin-top: 4px; }
 
+        /* Achievements */
+        .achievements-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(255, 204, 0, 0.1); border-color: #ffcc00; color: #ffcc00; }
+        .achievements-btn:hover { background: #ffcc00; color: #000; }
+        #achievementsOverlay { width: 480px; }
+        #achievementsList { text-align: left; margin-bottom: 15px; }
+        .ach-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); }
+        .ach-row.unlocked { border-color: #ffcc00; background: rgba(255, 204, 0, 0.08); }
+        .ach-icon { font-size: 22px; width: 30px; text-align: center; filter: grayscale(1); opacity: 0.35; flex-shrink: 0; }
+        .ach-row.unlocked .ach-icon { filter: none; opacity: 1; }
+        .ach-title { font-size: 13px; font-weight: bold; color: #777; }
+        .ach-row.unlocked .ach-title { color: #ffcc00; }
+        .ach-desc { font-size: 11px; color: #666; }
+
         /* Upgrade Shop */
         #upgradeShop { background: rgba(255,0,255,0.1); border: 1px dashed #ff00ff; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
         #upgradeShop h3 { margin: 0 0 10px 0; color: #ff00ff; font-size: 14px; text-transform: uppercase; }
@@ -209,6 +222,7 @@
             #gameCanvas { width: 100%; max-width: 1000px; height: auto; display: block; }
             #menuOverlay { width: min(95vw, 500px); max-height: 90vh; overflow-y: auto; padding: 18px; }
             #builderOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #achievementsOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
         }
     </style>
 </head>
@@ -300,8 +314,16 @@
                     </div>
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
                     <button class="ship-btn builder-btn" id="shipBuilderBtn" title="Reach Level 20 to unlock">🛠️ SHIP BUILDER (LOCKED)</button>
+                    <button class="ship-btn achievements-btn" id="achievementsBtn">🏆 ACHIEVEMENTS (0/12)</button>
 
                     <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
+                </div>
+
+                <!-- Achievements -->
+                <div id="achievementsOverlay" class="overlay hidden">
+                    <h1>ACHIEVEMENTS</h1>
+                    <div id="achievementsList"></div>
+                    <button id="achievementsBackBtn" class="ship-btn warning-btn">BACK</button>
                 </div>
 
                 <!-- Ship Builder -->

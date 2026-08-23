@@ -44,11 +44,87 @@ const upgSpeedBtn = document.getElementById("upgSpeedBtn");
 const upgShieldBtn = document.getElementById("upgShieldBtn");
 const upgPowerBtn = document.getElementById("upgPowerBtn");
 
+const achievementsBtn = document.getElementById("achievementsBtn");
+const achievementsBackBtn = document.getElementById("achievementsBackBtn");
+const achievementsOverlay = document.getElementById("achievementsOverlay");
+const achievementsListEl = document.getElementById("achievementsList");
+
 // Persistent Data
 let totalScrap = 0;
 let upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
 let highScores = [];
 let lastShipId = null;
+let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0 };
+let unlockedAch = {};
+let achievementToasts = [];
+let tookDamageThisHyperspace = false;
+
+const ACHIEVEMENTS = [
+    { id: "first_blood", icon: "\u{1F4A5}", title: "First Contact", desc: "Destroy your first target" },
+    { id: "level_10", icon: "\u{1FA90}", title: "Deep Space", desc: "Reach level 10" },
+    { id: "level_20", icon: "\u{1F680}", title: "Veteran Pilot", desc: "Reach level 20" },
+    { id: "level_26", icon: "\u{1F3C6}", title: "Campaign Complete", desc: "Beat level 26" },
+    { id: "boss_slayer", icon: "\u{2620}", title: "Boss Slayer", desc: "Defeat 10 bosses (lifetime)" },
+    { id: "hive_breaker", icon: "\u{1F41D}", title: "Hive Breaker", desc: "Defeat a Hive Swarm queen" },
+    { id: "combo_master", icon: "\u{1F525}", title: "Combo Master", desc: "Reach a 10x combo" },
+    { id: "demolitions", icon: "\u{1F4A3}", title: "Demolitions Expert", desc: "Use 25 bombs (lifetime)" },
+    { id: "scrapper", icon: "\u{1F527}", title: "Master Scrapper", desc: "Earn 5,000 lifetime scrap" },
+    { id: "ace", icon: "\u{1F396}", title: "Ace Pilot", desc: "Score 50,000 in a single run" },
+    { id: "shipwright", icon: "\u{1F6E0}", title: "Shipwright", desc: "Build and fly a custom ship" },
+    { id: "untouchable", icon: "\u{1F6E1}", title: "Untouchable", desc: "Clear a hyperspace anomaly without taking damage" },
+];
+
+function unlockAchievement(id) {
+    if (unlockedAch[id]) return;
+    let ach = ACHIEVEMENTS.find(a => a.id === id);
+    if (!ach) return;
+    unlockedAch[id] = true;
+    saveGameData();
+    renderAchievementsList();
+    achievementToasts.push({ icon: ach.icon, title: ach.title, life: 4.0 });
+    playSfx('powerup');
+}
+
+function checkAchievements() {
+    if (lifetimeStats.kills >= 1) unlockAchievement('first_blood');
+    if (combo >= 10) unlockAchievement('combo_master');
+    if (score >= 50000) unlockAchievement('ace');
+    if (lifetimeStats.bossKills >= 10) unlockAchievement('boss_slayer');
+    if (lifetimeStats.bombsUsed >= 25) unlockAchievement('demolitions');
+    if (lifetimeStats.scrapEarned >= 5000) unlockAchievement('scrapper');
+}
+
+function renderAchievementsList() {
+    if (achievementsBtn) achievementsBtn.innerText = `\u{1F3C6} ACHIEVEMENTS (${Object.keys(unlockedAch).length}/${ACHIEVEMENTS.length})`;
+    if (!achievementsListEl) return;
+    achievementsListEl.innerHTML = ACHIEVEMENTS.map(a => {
+        let unlocked = !!unlockedAch[a.id];
+        return `<div class="ach-row ${unlocked ? 'unlocked' : ''}"><span class="ach-icon">${a.icon}</span><span class="ach-text"><span class="ach-title">${a.title}</span><br><span class="ach-desc">${a.desc}</span></span></div>`;
+    }).join('');
+}
+
+function updateAchievementToasts(dt) {
+    for (let i = achievementToasts.length - 1; i >= 0; i--) {
+        achievementToasts[i].life -= dt;
+        if (achievementToasts[i].life <= 0) achievementToasts.splice(i, 1);
+    }
+}
+
+function drawAchievementToasts() {
+    achievementToasts.forEach((t, i) => {
+        let alpha = t.life > 3.7 ? (4.0 - t.life) / 0.3 : Math.min(1, t.life);
+        alpha = Math.max(0, Math.min(1, alpha));
+        let w = 260, h = 56, x = canvas.width - w - 16, y = 16 + i * (h + 10);
+        ctx.save(); ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(10, 10, 12, 0.9)"; ctx.strokeStyle = "#ffcc00"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); ctx.stroke();
+        ctx.textAlign = "left"; ctx.font = "26px sans-serif"; ctx.fillStyle = "#fff"; ctx.fillText(t.icon, x + 12, y + 38);
+        ctx.font = "bold 10px Courier New"; ctx.fillStyle = "#ffcc00"; ctx.fillText("ACHIEVEMENT UNLOCKED", x + 52, y + 20);
+        ctx.font = "bold 14px Courier New"; ctx.fillStyle = "#fff"; ctx.fillText(t.title, x + 52, y + 38);
+        ctx.restore();
+    });
+    ctx.textAlign = "center";
+}
 
 function loadSaveData() {
     try {
@@ -67,6 +143,9 @@ function loadSaveData() {
         if (typeof shipBuilderUnlocked !== "undefined") shipBuilderUnlocked = localStorage.getItem("sfc_shipBuilderUnlocked") === "1";
         let storedCustomShip = localStorage.getItem("sfc_customShip");
         if (storedCustomShip && typeof registerCustomShip === "function") registerCustomShip(JSON.parse(storedCustomShip));
+        let storedLifetime = localStorage.getItem("sfc_lifetime");
+        if (storedLifetime) { let p = JSON.parse(storedLifetime); lifetimeStats.kills = p.kills || 0; lifetimeStats.bossKills = p.bossKills || 0; lifetimeStats.bombsUsed = p.bombsUsed || 0; lifetimeStats.scrapEarned = p.scrapEarned || 0; }
+        let storedAch = localStorage.getItem("sfc_achievements"); if (storedAch) unlockedAch = JSON.parse(storedAch);
     } catch(e) {
         localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
     }
@@ -75,13 +154,17 @@ function loadSaveData() {
     }
     updateMuteUI();
     updateMenuUI();
+    renderAchievementsList();
     if (typeof updateBuilderUnlockUI === "function") updateBuilderUnlockUI();
     if (lastShipId && typeof setMenuShip === "function") setMenuShip(lastShipId);
     maybeShowFirstRunHint();
 }
 
 function saveGameData() {
-    try { localStorage.setItem("sfc_scores", JSON.stringify(highScores)); localStorage.setItem("sfc_scrap", totalScrap); localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades)); } catch(e) {}
+    try {
+        localStorage.setItem("sfc_scores", JSON.stringify(highScores)); localStorage.setItem("sfc_scrap", totalScrap); localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades));
+        localStorage.setItem("sfc_lifetime", JSON.stringify(lifetimeStats)); localStorage.setItem("sfc_achievements", JSON.stringify(unlockedAch));
+    } catch(e) {}
     updateMenuUI();
 }
 
@@ -225,7 +308,7 @@ if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio()
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
-    bombs--; playSfx('nuke'); nukeFlash = 1.0; shake = 30; vibrate([30, 40, 30]);
+    bombs--; lifetimeStats.bombsUsed++; playSfx('nuke'); nukeFlash = 1.0; shake = 30; vibrate([30, 40, 30]);
     if (is3DMode) { enemyBullets3D = []; targets3D = []; }
     else {
         enemyBullets = [];
@@ -769,6 +852,8 @@ function closeBuilder() {
 }
 
 if (shipBuilderBtn) { const openAction = (e) => { if(e) e.preventDefault(); initAudio(); openBuilder(); }; shipBuilderBtn.addEventListener("click", openAction); shipBuilderBtn.addEventListener("touchstart", openAction, { passive: false }); }
+if (achievementsBtn) { const openAchAction = (e) => { if(e) e.preventDefault(); initAudio(); renderAchievementsList(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(achievementsOverlay) achievementsOverlay.classList.remove("hidden"); }; achievementsBtn.addEventListener("click", openAchAction); achievementsBtn.addEventListener("touchstart", openAchAction, { passive: false }); }
+if (achievementsBackBtn) { const closeAchAction = (e) => { if(e) e.preventDefault(); initAudio(); if(achievementsOverlay) achievementsOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; achievementsBackBtn.addEventListener("click", closeAchAction); achievementsBackBtn.addEventListener("touchstart", closeAchAction, { passive: false }); }
 if (builderBackBtn) { const backAction = (e) => { if(e) e.preventDefault(); initAudio(); closeBuilder(); }; builderBackBtn.addEventListener("click", backAction); builderBackBtn.addEventListener("touchstart", backAction, { passive: false }); }
 if (builderSaveBtn) {
     const saveAction = (e) => {
@@ -776,6 +861,7 @@ if (builderSaveBtn) {
         let cfg = getBuilderConfig();
         try { localStorage.setItem("sfc_customShip", JSON.stringify(cfg)); } catch(err) {}
         registerCustomShip(cfg);
+        unlockAchievement('shipwright');
         setMenuShip("custom");
         closeBuilder();
     };
@@ -1101,10 +1187,12 @@ function updateUI() {
             swarmBarEl.classList.add("hidden");
         }
     }
+    checkAchievements();
 }
 
 function damagePlayer(amt) {
     if (invulnTimer > 0 || gameState !== "PLAYING") return;
+    tookDamageThisHyperspace = true;
     playSfx('hit'); shake += 5; vibrate(40); spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
     spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
     combo = 1; comboTimer = 0;
@@ -1117,7 +1205,7 @@ function damagePlayer(amt) {
     if (playerHp <= 0) {
         playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
         if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
-        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; }
+        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; }
     }
     updateUI();
 }
@@ -1146,20 +1234,22 @@ function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
-    if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); }
+    if (level === 10) unlockAchievement('level_10');
+    if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
 
     if (level === 20 && !shipBuilderUnlocked) {
         shipBuilderUnlocked = true;
         try { localStorage.setItem("sfc_shipBuilderUnlocked", "1"); } catch(e) {}
         updateBuilderUnlockUI();
         spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
+        unlockAchievement('level_20');
     }
 
     is3DMode = (level % 7 === 0);
     hiveSwarmActive = false;
 
     if (is3DMode) {
-        levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0;
+        levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0; tookDamageThisHyperspace = false;
         spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40); spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
         updateUI();
         return;
@@ -1226,8 +1316,9 @@ let lastTime = performance.now();
 function loop(timestamp) {
     try {
         let dt = (timestamp - lastTime) / 1000; if (dt > 0.1 || isNaN(dt)) dt = 0.016; lastTime = timestamp; frames++;
-        
-        if (gameState === "PLAYING") { if (is3DMode) update3D(dt); else update(dt); } 
+        updateAchievementToasts(dt);
+
+        if (gameState === "PLAYING") { if (is3DMode) update3D(dt); else update(dt); }
         else if (gameState === "LEVEL_TRANSITION") { hyperspace += dt; ship.x += 1000 * dt; if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } } 
         else if (gameState === "MENU") {
             targets.forEach(t => { 
@@ -1293,6 +1384,7 @@ function update3D(dt) {
     levelTimer3D -= dt;
     if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); } 
     else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
+        if (!tookDamageThisHyperspace) unlockAchievement('untouchable');
         level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
         bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
     }
@@ -1325,7 +1417,7 @@ function update3D(dt) {
                 let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0);
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
-                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0;
+                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
                     score += (t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
                 }
             }
@@ -1522,16 +1614,16 @@ function update(dt) {
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
                 spawnParticles(t.x, t.y, (t.type==="asteroid"||t.type==="satellite") ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
                 spawnText(t.x, t.y, "DESTROYED", "#ff0000");
-                combo++; if(combo>10) combo=10; comboTimer = 4.0;
-                
+                combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
+
                 let diffMod = 1 + (level * 0.1);
-                if (t.type === "boss_station" || t.type === "boss_mothership" || t.type === "boss_dreadnought") { score += 1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
-                else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); } 
-                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); } 
+                if (t.type === "boss_station" || t.type === "boss_mothership" || t.type === "boss_dreadnought") { score += 1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
+                else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
+                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
                 else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); }
                 else if (t.type === "satellite") { score += 75*combo; spawnScrap(t.x, t.y, 5); }
                 else if (t.type === "hive_minion") {
-                    if (t.isQueen) { score += 300*combo; spawnScrap(t.x, t.y, 4); shake = 15; }
+                    if (t.isQueen) { score += 300*combo; spawnScrap(t.x, t.y, 4); shake = 15; unlockAchievement('hive_breaker'); }
                     else { score += 20*combo; spawnScrap(t.x, t.y, 1); }
                     if (targets.length === 1) { score += 1200*combo; shake = 25; spawnText(t.x, t.y - 20, "SWARM DEFEATED!", "#ff33ff", 20); }
                 }
@@ -1771,6 +1863,7 @@ function render3D() {
         ctx.restore();
     }
     ctx.restore();
+    drawAchievementToasts();
     drawMenuOverlays();
 }
 
@@ -1861,6 +1954,7 @@ function render() {
     }
 
     ctx.restore();
+    drawAchievementToasts();
     drawMenuOverlays();
 }
 
