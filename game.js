@@ -49,12 +49,17 @@ const achievementsBackBtn = document.getElementById("achievementsBackBtn");
 const achievementsOverlay = document.getElementById("achievementsOverlay");
 const achievementsListEl = document.getElementById("achievementsList");
 
+const pilotRecordBtn = document.getElementById("pilotRecordBtn");
+const pilotRecordBackBtn = document.getElementById("pilotRecordBackBtn");
+const pilotRecordOverlay = document.getElementById("pilotRecordOverlay");
+const pilotRecordListEl = document.getElementById("pilotRecordList");
+
 // Persistent Data
 let totalScrap = 0;
 let upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
 let highScores = [];
 let lastShipId = null;
-let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0 };
+let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0 };
 let unlockedAch = {};
 let achievementToasts = [];
 let tookDamageThisHyperspace = false;
@@ -82,7 +87,7 @@ function unlockAchievement(id) {
     saveGameData();
     renderAchievementsList();
     achievementToasts.push({ icon: ach.icon, title: ach.title, life: 4.0 });
-    playSfx('powerup');
+    playSfx('achievement');
 }
 
 function checkAchievements() {
@@ -101,6 +106,23 @@ function renderAchievementsList() {
         let unlocked = !!unlockedAch[a.id];
         return `<div class="ach-row ${unlocked ? 'unlocked' : ''}"><span class="ach-icon">${a.icon}</span><span class="ach-text"><span class="ach-title">${a.title}</span><br><span class="ach-desc">${a.desc}</span></span></div>`;
     }).join('');
+}
+
+function renderPilotRecord() {
+    if (!pilotRecordListEl) return;
+    let bestScore = (highScores && highScores.length) ? highScores[0].score : 0;
+    let rows = [
+        ["Games Played", lifetimeStats.gamesPlayed || 0],
+        ["Best Score", bestScore],
+        ["Highest Level Reached", lifetimeStats.highestLevel || 0],
+        ["Total Kills", lifetimeStats.kills || 0],
+        ["Bosses Defeated", lifetimeStats.bossKills || 0],
+        ["Hyperspace Anomalies Cleared", lifetimeStats.hyperspaceCleared || 0],
+        ["Bombs Used", lifetimeStats.bombsUsed || 0],
+        ["Lifetime Scrap Earned", lifetimeStats.scrapEarned || 0],
+        ["Achievements Unlocked", `${Object.keys(unlockedAch).length}/${ACHIEVEMENTS.length}`],
+    ];
+    pilotRecordListEl.innerHTML = rows.map(([label, val]) => `<div class="record-row"><span>${label}</span><span>${val}</span></div>`).join('');
 }
 
 function updateAchievementToasts(dt) {
@@ -144,7 +166,11 @@ function loadSaveData() {
         let storedCustomShip = localStorage.getItem("sfc_customShip");
         if (storedCustomShip && typeof registerCustomShip === "function") registerCustomShip(JSON.parse(storedCustomShip));
         let storedLifetime = localStorage.getItem("sfc_lifetime");
-        if (storedLifetime) { let p = JSON.parse(storedLifetime); lifetimeStats.kills = p.kills || 0; lifetimeStats.bossKills = p.bossKills || 0; lifetimeStats.bombsUsed = p.bombsUsed || 0; lifetimeStats.scrapEarned = p.scrapEarned || 0; }
+        if (storedLifetime) {
+            let p = JSON.parse(storedLifetime);
+            lifetimeStats.kills = p.kills || 0; lifetimeStats.bossKills = p.bossKills || 0; lifetimeStats.bombsUsed = p.bombsUsed || 0; lifetimeStats.scrapEarned = p.scrapEarned || 0;
+            lifetimeStats.gamesPlayed = p.gamesPlayed || 0; lifetimeStats.highestLevel = p.highestLevel || 0; lifetimeStats.hyperspaceCleared = p.hyperspaceCleared || 0;
+        }
         let storedAch = localStorage.getItem("sfc_achievements"); if (storedAch) unlockedAch = JSON.parse(storedAch);
     } catch(e) {
         localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
@@ -169,7 +195,7 @@ function saveGameData() {
 }
 
 function checkAndSaveScore() {
-    highScores.push({ name: currentPlayerName, score: score });
+    highScores.push({ name: currentPlayerName, score: Math.round(score) });
     highScores.sort((a, b) => b.score - a.score);
     highScores = highScores.slice(0, 5);
     saveGameData();
@@ -194,7 +220,8 @@ if(upgPowerBtn) upgPowerBtn.addEventListener("click", (e) => { e.preventDefault(
 
 // --- GLOBAL GAME STATE ---
 let gameState = "MENU"; 
-let gameDifficulty = "moderate"; 
+let gameDifficulty = "moderate";
+let diffScoreMult = 1;
 let score = 0, level = 1, frames = 0;
 let shake = 0, hyperspace = 0, nukeFlash = 0;
 let playerHp = 100, playerMaxHp = 100, playerShield = 100, playerMaxShield = 100;
@@ -232,6 +259,14 @@ function playSfx(type) {
         else if (type === 'nuke') { osc.type = 'square'; osc.frequency.setValueAtTime(50, now); osc.frequency.linearRampToValueAtTime(20, now + 1.5); gain.gain.setValueAtTime(0.3, now); gain.gain.linearRampToValueAtTime(0, now + 1.5); osc.start(now); osc.stop(now + 1.5); }
         else if (type === 'scrap') { osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.linearRampToValueAtTime(1200, now + 0.05); gain.gain.setValueAtTime(0.05, now); gain.gain.linearRampToValueAtTime(0, now + 0.05); osc.start(now); osc.stop(now + 0.05); }
         else if (type === 'glitch') { osc.type = 'square'; osc.frequency.setValueAtTime(60, now); osc.frequency.setValueAtTime(300, now + 0.03); osc.frequency.setValueAtTime(40, now + 0.06); osc.frequency.setValueAtTime(250, now + 0.09); gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12); osc.start(now); osc.stop(now + 0.12); }
+        else if (type === 'achievement') {
+            [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                let o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = now + i * 0.09;
+                o.type = 'triangle'; o.frequency.setValueAtTime(freq, t0);
+                g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.12, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+                o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.26);
+            });
+        }
     } catch (e) {}
 }
 
@@ -854,6 +889,8 @@ function closeBuilder() {
 if (shipBuilderBtn) { const openAction = (e) => { if(e) e.preventDefault(); initAudio(); openBuilder(); }; shipBuilderBtn.addEventListener("click", openAction); shipBuilderBtn.addEventListener("touchstart", openAction, { passive: false }); }
 if (achievementsBtn) { const openAchAction = (e) => { if(e) e.preventDefault(); initAudio(); renderAchievementsList(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(achievementsOverlay) achievementsOverlay.classList.remove("hidden"); }; achievementsBtn.addEventListener("click", openAchAction); achievementsBtn.addEventListener("touchstart", openAchAction, { passive: false }); }
 if (achievementsBackBtn) { const closeAchAction = (e) => { if(e) e.preventDefault(); initAudio(); if(achievementsOverlay) achievementsOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; achievementsBackBtn.addEventListener("click", closeAchAction); achievementsBackBtn.addEventListener("touchstart", closeAchAction, { passive: false }); }
+if (pilotRecordBtn) { const openRecAction = (e) => { if(e) e.preventDefault(); initAudio(); renderPilotRecord(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(pilotRecordOverlay) pilotRecordOverlay.classList.remove("hidden"); }; pilotRecordBtn.addEventListener("click", openRecAction); pilotRecordBtn.addEventListener("touchstart", openRecAction, { passive: false }); }
+if (pilotRecordBackBtn) { const closeRecAction = (e) => { if(e) e.preventDefault(); initAudio(); if(pilotRecordOverlay) pilotRecordOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; pilotRecordBackBtn.addEventListener("click", closeRecAction); pilotRecordBackBtn.addEventListener("touchstart", closeRecAction, { passive: false }); }
 if (builderBackBtn) { const backAction = (e) => { if(e) e.preventDefault(); initAudio(); closeBuilder(); }; builderBackBtn.addEventListener("click", backAction); builderBackBtn.addEventListener("touchstart", backAction, { passive: false }); }
 if (builderSaveBtn) {
     const saveAction = (e) => {
@@ -935,6 +972,25 @@ const TargetDesigns = {
             for (let i=-0.9; i<0.2; i+=0.28) ctx.fillRect(r*i, -2, 6, 4);
             clearGlow(ctx);
             applyGlow(ctx, "#ff6600", 20); ctx.fillStyle = "#ffcc00"; ctx.beginPath(); ctx.ellipse(-r*1.1, 0, r*0.12, r*0.18, 0, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+            if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-20, r*2*hp, 6); ctx.restore(); }
+        }
+    },
+    boss_carrier: {
+        draw: (ctx, r, t) => {
+            if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill(); return; }
+            popHalo(ctx, r, "#ffcc00", 0.4);
+            let hullGrad = ctx.createLinearGradient(0, -r*0.35, 0, r*0.35);
+            hullGrad.addColorStop(0, "#4a4e58"); hullGrad.addColorStop(0.5, "#23262c"); hullGrad.addColorStop(1, "#4a4e58");
+            ctx.fillStyle = hullGrad; ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(r*1.4, 0); ctx.lineTo(r*0.9, -r*0.35); ctx.lineTo(-r*1.1, -r*0.35); ctx.lineTo(-r*1.4, 0);
+            ctx.lineTo(-r*1.1, r*0.35); ctx.lineTo(r*0.9, r*0.35); ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "#ffcc00"; ctx.globalAlpha = 0.6; ctx.fillRect(-r*1.0, -r*0.04, r*2.2, r*0.08); ctx.globalAlpha = 1.0;
+            let doorOpen = (t.launchTimer !== undefined && t.launchTimer < 0.6);
+            applyGlow(ctx, doorOpen ? "#ffee88" : "#664400", doorOpen ? 20 : 6);
+            ctx.fillStyle = doorOpen ? "#ffee88" : "#443300"; ctx.fillRect(-r*1.3, -r*0.18, r*0.3, r*0.36);
+            clearGlow(ctx);
             if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-20, r*2*hp, 6); ctx.restore(); }
         }
     },
@@ -1128,7 +1184,7 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
     let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 1.5, stunned: 0 };
-    if (type === "boss_station" || type === "boss_mothership" || type === "boss_dreadnought") t.rotSpeed = 0.2;
+    if (type.startsWith("boss")) t.rotSpeed = 0.2;
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
     if (type === "sentinel") t.chaseSpeed = 3 * speedMod;
     if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(baseR));
@@ -1163,7 +1219,7 @@ function spawnPowerup() {
 }
 
 function updateUI() {
-    if(scoreEl) scoreEl.innerText = score; if(levelEl) levelEl.innerText = level; 
+    if(scoreEl) scoreEl.innerText = Math.round(score); if(levelEl) levelEl.innerText = level; 
     if(hpEl) hpEl.innerText = Math.ceil(playerHp); if(shEl) shEl.innerText = Math.ceil(playerShield);
     if(bombEl) bombEl.innerText = bombs; if(comboEl) comboEl.innerText = combo + "x"; if(scrapEl) scrapEl.innerText = currentRunScrap;
     
@@ -1220,6 +1276,8 @@ function startGame(shipId) {
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
 
     score = 0; level = 1; currentRunScrap = 0; lives = 3;
+    diffScoreMult = gameDifficulty === "easy" ? 0.75 : gameDifficulty === "hard" ? 1.35 : gameDifficulty === "insane" ? 1.75 : 1.0;
+    lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
     combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
@@ -1234,6 +1292,7 @@ function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
+    if (level > lifetimeStats.highestLevel) lifetimeStats.highestLevel = level;
     if (level === 10) unlockAchievement('level_10');
     if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
 
@@ -1256,7 +1315,9 @@ function startLevel() {
     }
 
     let diffMult = 1.0; let speedMult = 1.0;
-    if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; } else if (gameDifficulty === "hard") { diffMult = 1.5; speedMult = 1.3; }
+    if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; }
+    else if (gameDifficulty === "hard") { diffMult = 1.5; speedMult = 1.3; }
+    else if (gameDifficulty === "insane") { diffMult = 2.0; speedMult = 1.6; }
     let speedMod = speedMult + (level * 0.1 * speedMult);
 
     if (level % 5 === 0 && !is3DMode) {
@@ -1286,6 +1347,10 @@ function startLevel() {
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
             boss.nodes = [{ang: 0, hp: 4}, {ang: Math.PI/2, hp: 4}, {ang: Math.PI, hp: 4}, {ang: Math.PI*1.5, hp: 4}];
+        } else if (level % 55 === 0) {
+            let bossR = 85 + (level * 1.1); spawnTarget("boss_carrier", bossR, speedMod * 0.15);
+            let boss = targets[targets.length - 1];
+            boss.maxHp = Math.floor((50 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.launchTimer = 3.0;
         } else {
             let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
             let boss = targets[targets.length - 1];
@@ -1384,6 +1449,7 @@ function update3D(dt) {
     levelTimer3D -= dt;
     if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); } 
     else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
+        lifetimeStats.hyperspaceCleared++;
         if (!tookDamageThisHyperspace) unlockAchievement('untouchable');
         level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
         bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
@@ -1418,7 +1484,7 @@ function update3D(dt) {
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
-                    score += (t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
+                    score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
                 }
             }
         }
@@ -1501,7 +1567,7 @@ function update(dt) {
             else if (p.type === 'B') { bombs++; spawnText(ship.x, ship.y, "+1 BOMB", "#ffcc00"); }
             else if (p.type === 'R') { rapidFireTimer = 8.0; spawnText(ship.x, ship.y, "RAPID FIRE", "#ff8800"); }
             else if (p.type === 'T') { slowmoTimer = 6.0; spawnText(ship.x, ship.y, "TIME SLOW", "#66ccff"); }
-            score += 150 * combo; updateUI(); powerups.splice(i, 1);
+            score += diffScoreMult *150 * combo; updateUI(); powerups.splice(i, 1);
         }
     }
 
@@ -1525,6 +1591,15 @@ function update(dt) {
                 playSfx('boom'); shake += 8; t.broadsideTimer = 3.0;
                 let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x);
                 [-0.6, -0.3, 0, 0.3, 0.6].forEach(off => enemyBullets.push({ x: t.x, y: t.y, xv: 7*Math.cos(angToPlayer+off), yv: 7*Math.sin(angToPlayer+off), range: canvas.width }));
+            }
+        }
+        if (t.type === "boss_carrier") {
+            // Unarmed itself -- it overwhelms by launching wings of fast interceptors instead
+            if (t.launchTimer === undefined) t.launchTimer = 3.0; t.launchTimer -= dt;
+            if (t.launchTimer <= 0 && targets.length < 18) {
+                playSfx('enemyShoot'); shake += 4;
+                for (let k = 0; k < 3; k++) spawnTarget("tie_interceptor", 15, 1.8 + (level * 0.1), t.x - t.r*1.3, t.y + (k-1)*20);
+                t.launchTimer = 6.0;
             }
         }
         if (t.type === "hive_minion") {
@@ -1572,7 +1647,7 @@ function update(dt) {
                     if (dist < t1.r + t2.r * 0.8) {
                         smashed = true; spawnParticles(t1.x, t1.y, "#ff5500", 20); playSfx('boom');
                         spawnText(t1.x, t1.y, "CRUSHED", "#ff5500", 14);
-                        score += 15 * combo; spawnScrap(t1.x, t1.y, 1); updateUI();
+                        score += diffScoreMult *15 * combo; spawnScrap(t1.x, t1.y, 1); updateUI();
                         break;
                     }
                 }
@@ -1608,7 +1683,7 @@ function update(dt) {
                 
                 playSfx('hit');
                 if (t.hp !== undefined && t.hp > dmg) { 
-                    t.hp -= dmg; t.hitFlash = 0.1; score += 25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; 
+                    t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; 
                 }
                 
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
@@ -1617,17 +1692,17 @@ function update(dt) {
                 combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
 
                 let diffMod = 1 + (level * 0.1);
-                if (t.type === "boss_station" || t.type === "boss_mothership" || t.type === "boss_dreadnought") { score += 1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
-                else if (t.type === "star_destroyer") { score += 100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
-                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += 50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
-                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += 25*combo; spawnScrap(t.x, t.y, 1); }
-                else if (t.type === "satellite") { score += 75*combo; spawnScrap(t.x, t.y, 5); }
+                if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
+                else if (t.type === "star_destroyer") { score += diffScoreMult *100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
+                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += diffScoreMult *50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
+                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += diffScoreMult *25*combo; spawnScrap(t.x, t.y, 1); }
+                else if (t.type === "satellite") { score += diffScoreMult *75*combo; spawnScrap(t.x, t.y, 5); }
                 else if (t.type === "hive_minion") {
-                    if (t.isQueen) { score += 300*combo; spawnScrap(t.x, t.y, 4); shake = 15; unlockAchievement('hive_breaker'); }
-                    else { score += 20*combo; spawnScrap(t.x, t.y, 1); }
-                    if (targets.length === 1) { score += 1200*combo; shake = 25; spawnText(t.x, t.y - 20, "SWARM DEFEATED!", "#ff33ff", 20); }
+                    if (t.isQueen) { score += diffScoreMult *300*combo; spawnScrap(t.x, t.y, 4); shake = 15; unlockAchievement('hive_breaker'); }
+                    else { score += diffScoreMult *20*combo; spawnScrap(t.x, t.y, 1); }
+                    if (targets.length === 1) { score += diffScoreMult *1200*combo; shake = 25; spawnText(t.x, t.y - 20, "SWARM DEFEATED!", "#ff33ff", 20); }
                 }
-                else if (t.type === "asteroid") { score += ((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
+                else if (t.type === "asteroid") { score += diffScoreMult *((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
                 
                 targets.splice(j, 1); hit = true; break;
             }
@@ -1639,7 +1714,7 @@ function update(dt) {
         for (let j = targets.length - 1; j >= 0; j--) {
             let t = targets[j];
             if (Math.hypot(ship.x - t.x, ship.y - t.y) < ship.r + t.r * 0.8) { 
-                let isBoss = (t.type === "boss_station" || t.type === "boss_mothership" || t.type === "boss_dreadnought");
+                let isBoss = t.type.startsWith("boss");
                 damagePlayer(isBoss ? 100 : 40); 
                 if (!isBoss) { spawnParticles(t.x, t.y, "#ff5500", 15); targets.splice(j, 1); }
                 break;

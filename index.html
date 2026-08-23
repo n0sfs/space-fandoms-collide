@@ -126,6 +126,9 @@
         }
         .diff-btn:hover { background: #222; color: #fff; }
         .diff-btn.active { background: #ffcc00; color: #000; border-color: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.5); }
+        .diff-btn.insane-btn { color: #ff3333; border-color: #661111; }
+        .diff-btn.insane-btn:hover { background: #331111; color: #ff6666; }
+        .diff-btn.insane-btn.active { background: #ff3333; color: #000; border-color: #ff3333; box-shadow: 0 0 10px rgba(255,51,51,0.6); }
 
         .ship-btn { background: #222; color: white; border: 1px solid #555; padding: 10px 5px; font-size: 12px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .ship-btn:hover { background: #ffcc00; color: black; border-color: white; }
@@ -192,6 +195,15 @@
         .ach-row.unlocked .ach-title { color: #ffcc00; }
         .ach-desc { font-size: 11px; color: #666; }
 
+        /* Pilot Record */
+        .record-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(51, 204, 255, 0.1); border-color: #33ccff; color: #33ccff; }
+        .record-btn:hover { background: #33ccff; color: #000; }
+        #pilotRecordOverlay { width: 420px; }
+        #pilotRecordList { text-align: left; margin-bottom: 15px; }
+        .record-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); font-size: 13px; }
+        .record-row span:first-child { color: #999; }
+        .record-row span:last-child { color: #33ccff; font-weight: bold; }
+
         /* Upgrade Shop */
         #upgradeShop { background: rgba(255,0,255,0.1); border: 1px dashed #ff00ff; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
         #upgradeShop h3 { margin: 0 0 10px 0; color: #ff00ff; font-size: 14px; text-transform: uppercase; }
@@ -223,6 +235,7 @@
             #menuOverlay { width: min(95vw, 500px); max-height: 90vh; overflow-y: auto; padding: 18px; }
             #builderOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
             #achievementsOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #pilotRecordOverlay { width: min(95vw, 420px); max-height: 90vh; overflow-y: auto; padding: 18px; }
         }
     </style>
 </head>
@@ -291,6 +304,7 @@
                         <button class="diff-btn" data-diff="easy">EASY</button>
                         <button class="diff-btn active" data-diff="moderate">MODERATE</button>
                         <button class="diff-btn" data-diff="hard">HARD</button>
+                        <button class="diff-btn insane-btn" data-diff="insane">INSANE</button>
                     </div>
 
                     <!-- Upgrade Shop -->
@@ -315,6 +329,7 @@
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
                     <button class="ship-btn builder-btn" id="shipBuilderBtn" title="Reach Level 20 to unlock">🛠️ SHIP BUILDER (LOCKED)</button>
                     <button class="ship-btn achievements-btn" id="achievementsBtn">🏆 ACHIEVEMENTS (0/12)</button>
+                    <button class="ship-btn record-btn" id="pilotRecordBtn">📊 PILOT RECORD</button>
 
                     <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
                 </div>
@@ -324,6 +339,13 @@
                     <h1>ACHIEVEMENTS</h1>
                     <div id="achievementsList"></div>
                     <button id="achievementsBackBtn" class="ship-btn warning-btn">BACK</button>
+                </div>
+
+                <!-- Pilot Record -->
+                <div id="pilotRecordOverlay" class="overlay hidden">
+                    <h1>PILOT RECORD</h1>
+                    <div id="pilotRecordList"></div>
+                    <button id="pilotRecordBackBtn" class="ship-btn warning-btn">BACK</button>
                 </div>
 
                 <!-- Ship Builder -->
