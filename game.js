@@ -128,7 +128,7 @@ let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI /
 // --- 3D STATE VARIABLES ---
 let is3DMode = false, levelTimer3D = 0;
 let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged = false;
-const FOV = 400;
+const FOV = 500;
 let camX = 0, camY = 0;
 let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
 for(let i=0; i<250; i++) stars3D.push({x: (Math.random()-0.5)*5000, y: (Math.random()-0.5)*5000, z: Math.random()*3000});
@@ -1037,7 +1037,7 @@ function generateJaggedAsteroid(r) {
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
-    if (x === null) { let safeCounter = 0; do { x = Math.random() * (canvas.width || 800); y = Math.random() * (canvas.height || 600); safeCounter++; } while (Math.hypot((ship.x || 400) - x, (ship.y || 300) - y) < 200 && safeCounter < 50); }
+    if (x === null) { let safeCounter = 0; do { x = Math.random() * (canvas.width || 1000); y = Math.random() * (canvas.height || 750); safeCounter++; } while (Math.hypot((ship.x || 500) - x, (ship.y || 375) - y) < 200 && safeCounter < 50); }
     if (type === "asteroid" && Math.random() < 0.1) { type = "satellite"; baseR = 25; }
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
@@ -1567,6 +1567,16 @@ function render3D() {
 
     let CX = canvas.width/2, CY = canvas.height/2;
 
+    // Soft nebula backdrop, drifting slowly opposite the camera for a hint of parallax depth
+    let nebulaHue = (level * 15) % 360;
+    [[0.28, 0.32, nebulaHue + 20, 0.55], [0.68, 0.45, nebulaHue - 40, 0.5], [0.5, 0.7, nebulaHue + 190, 0.45]].forEach(([fx, fy, hue, size]) => {
+        let nx = canvas.width * fx - camX * 0.02; let ny = canvas.height * fy - camY * 0.02;
+        let ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, canvas.width * size);
+        ng.addColorStop(0, `hsla(${hue}, 70%, 45%, 0.16)`);
+        ng.addColorStop(1, `hsla(${hue}, 70%, 45%, 0)`);
+        ctx.fillStyle = ng; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    });
+
     ctx.fillStyle = "#fff";
     stars3D.forEach(s => {
         if (s.z < 10) return;
@@ -1605,27 +1615,53 @@ function render3D() {
         ctx.restore();
     });
 
-    // Cockpit frame panels, gradient-shaded so the metal reads as curving toward the window
-    let topGrad = ctx.createLinearGradient(0, 0, 0, canvas.height*0.2);
+    // Window opening geometry: struts converge sharply toward the top like a real canopy A-frame,
+    // rather than the shallow trapezoid this used to be. Shared by every panel/outline/HUD element below.
+    let winTopL = 0.30, winTopR = 0.70, winTopY = 0.07;
+    let winBotL = 0.08, winBotR = 0.92, winBotY = 0.80;
+
+    let topGrad = ctx.createLinearGradient(0, 0, 0, canvas.height*winTopY);
     topGrad.addColorStop(0, "#08080a"); topGrad.addColorStop(1, "#2e2e34");
     ctx.fillStyle = topGrad;
     ctx.beginPath();
-    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*0.1);
-    ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(0, canvas.height*0.1); ctx.fill();
+    ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*winTopY*0.5);
+    ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(0, canvas.height*winTopY*0.5); ctx.fill();
+    // Illuminated strip right at the strut convergence, echoing an overhead console light
+    ctx.fillStyle = "rgba(0, 200, 220, 0.5)"; ctx.fillRect(canvas.width*winTopL, canvas.height*winTopY - 3, canvas.width*(winTopR-winTopL), 3);
 
-    let botGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height*0.8);
-    botGrad.addColorStop(0, "#08080a"); botGrad.addColorStop(1, "#2e2e34");
+    let botGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height*winBotY);
+    botGrad.addColorStop(0, "#0a0a0d"); botGrad.addColorStop(1, "#2e2e34");
     ctx.fillStyle = botGrad;
     ctx.beginPath();
-    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*0.9, canvas.height*0.8);
-    ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.fill();
+    ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY);
+    ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.fill();
 
-    // Dashboard instrument cluster set into the bottom console: two live gauges (shield/heat)
-    // flanking a row of ambient blinking lights, so the frame reads as a cockpit, not just a border.
-    let dashY = canvas.height * 0.9, dashCX = canvas.width / 2;
+    // Dashboard: a big central hub (yoke boss) flanked by two panels of instrument lights,
+    // with the shield/heat gauges built into the panels either side of it.
+    let dashY = canvas.height * (winBotY + (1 - winBotY) * 0.42), dashCX = canvas.width / 2;
+    ctx.save(); ctx.translate(dashCX, dashY);
+    ctx.fillStyle = "#0c0c10"; ctx.beginPath(); ctx.arc(0, 0, canvas.height*0.075, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 220, 255, 0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, canvas.height*0.05, 0, Math.PI*2); ctx.stroke();
+    applyGlow(ctx, "#00ccff", 10); ctx.fillStyle = "#00e0ff"; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    ctx.restore();
+
     [-1, 1].forEach(side => {
-        let gx = dashCX + side * canvas.width * 0.16;
-        ctx.save(); ctx.translate(gx, dashY);
+        let panelW = canvas.width * 0.16, panelH = canvas.height * 0.1;
+        let px = dashCX + side * canvas.width * 0.24 - (side < 0 ? panelW : 0);
+        let py = dashY - panelH / 2;
+        ctx.fillStyle = "#0a0a0d"; ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5;
+        ctx.fillRect(px, py, panelW, panelH); ctx.strokeRect(px, py, panelW, panelH);
+        // small lit button/indicator grid
+        for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+            let bx = px + 8 + c * (panelW - 16) / 3, by = py + 10 + r * (panelH - 20);
+            let on = Math.sin(frames*0.04 + r*2 + c*1.1 + side*3) > 0.1;
+            ctx.fillStyle = on ? "#33ccff" : "#123044";
+            ctx.fillRect(bx - 3, by - 3, 6, 6);
+        }
+        // gauge dial: shield on the left panel, heat on the right
+        let gx = dashCX + side * canvas.width * 0.16, gy = dashY + panelH * 0.85;
+        ctx.save(); ctx.translate(gx, gy);
         ctx.fillStyle = "#0a0a0c"; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.stroke();
         let val = side < 0 ? (playerShield / playerMaxShield) : (heat / 100);
@@ -1634,29 +1670,27 @@ function render3D() {
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(needleAng)*12, Math.sin(needleAng)*12); ctx.stroke();
         ctx.restore();
     });
-    for (let i = 0; i < 5; i++) {
-        let lx = dashCX - 60 + i*30;
-        let on = Math.sin(frames*0.05 + i*1.3) > 0.3;
-        ctx.fillStyle = on ? "#33ff66" : "#113322";
-        ctx.beginPath(); ctx.arc(lx, dashY - 26, 3.5, 0, Math.PI*2); ctx.fill();
-    }
 
-    let leftGrad = ctx.createLinearGradient(0, 0, canvas.width*0.2, 0);
-    leftGrad.addColorStop(0, "#08080a"); leftGrad.addColorStop(1, "#2e2e34");
+    let leftGrad = ctx.createLinearGradient(0, 0, canvas.width*winTopL, 0);
+    leftGrad.addColorStop(0, "#08080a"); leftGrad.addColorStop(1, "#38383f");
     ctx.fillStyle = leftGrad;
     ctx.beginPath();
-    ctx.moveTo(0, canvas.height*0.1); ctx.lineTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.lineTo(0, canvas.height); ctx.fill();
+    ctx.moveTo(0, canvas.height*winTopY*0.5); ctx.lineTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.lineTo(0, canvas.height); ctx.fill();
+    ctx.strokeStyle = "rgba(200, 220, 230, 0.25)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.stroke();
 
-    let rightGrad = ctx.createLinearGradient(canvas.width, 0, canvas.width*0.8, 0);
-    rightGrad.addColorStop(0, "#08080a"); rightGrad.addColorStop(1, "#2e2e34");
+    let rightGrad = ctx.createLinearGradient(canvas.width, 0, canvas.width*winTopR, 0);
+    rightGrad.addColorStop(0, "#08080a"); rightGrad.addColorStop(1, "#38383f");
     ctx.fillStyle = rightGrad;
     ctx.beginPath();
-    ctx.moveTo(canvas.width, canvas.height*0.1); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
+    ctx.moveTo(canvas.width, canvas.height*winTopY*0.5); ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY); ctx.lineTo(canvas.width, canvas.height); ctx.fill();
+    ctx.strokeStyle = "rgba(200, 220, 230, 0.25)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY); ctx.stroke();
 
     ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY); ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.closePath(); ctx.stroke();
     ctx.strokeStyle = "rgba(0, 255, 255, 0.3)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2); ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY); ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.closePath(); ctx.stroke();
 
     ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
@@ -1665,7 +1699,7 @@ function render3D() {
 
     // Targeting-frame corner brackets at the window opening, a common cockpit-HUD tell
     ctx.strokeStyle = "rgba(0, 255, 255, 0.55)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-    [[0.2, 0.2, 1, 1], [0.8, 0.2, -1, 1], [0.1, 0.8, 1, -1], [0.9, 0.8, -1, -1]].forEach(([fx, fy, dx, dy]) => {
+    [[winTopL, winTopY, 1, 1], [winTopR, winTopY, -1, 1], [winBotL, winBotY, 1, -1], [winBotR, winBotY, -1, -1]].forEach(([fx, fy, dx, dy]) => {
         let x = canvas.width*fx, y = canvas.height*fy;
         ctx.beginPath(); ctx.moveTo(x, y + dy*20); ctx.lineTo(x, y); ctx.lineTo(x + dx*20, y); ctx.stroke();
     });
@@ -1674,8 +1708,8 @@ function render3D() {
     // Soft diagonal canopy-glass glare, clipped to the window opening
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(canvas.width*0.2, canvas.height*0.2); ctx.lineTo(canvas.width*0.8, canvas.height*0.2);
-    ctx.lineTo(canvas.width*0.9, canvas.height*0.8); ctx.lineTo(canvas.width*0.1, canvas.height*0.8); ctx.closePath();
+    ctx.moveTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY);
+    ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY); ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.closePath();
     ctx.clip();
     let reflGrad = ctx.createLinearGradient(canvas.width*0.1, canvas.height*0.1, canvas.width*0.55, canvas.height*0.55);
     reflGrad.addColorStop(0, "rgba(255, 255, 255, 0.09)");
