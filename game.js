@@ -1621,54 +1621,129 @@ function render3D() {
     let winBotL = 0.08, winBotR = 0.92, winBotY = 0.80;
 
     let topGrad = ctx.createLinearGradient(0, 0, 0, canvas.height*winTopY);
-    topGrad.addColorStop(0, "#08080a"); topGrad.addColorStop(1, "#2e2e34");
+    topGrad.addColorStop(0, "#111318"); topGrad.addColorStop(0.6, "#1c1e24"); topGrad.addColorStop(1, "#3a3d46");
     ctx.fillStyle = topGrad;
     ctx.beginPath();
     ctx.moveTo(0,0); ctx.lineTo(canvas.width, 0); ctx.lineTo(canvas.width, canvas.height*winTopY*0.5);
     ctx.lineTo(canvas.width*winTopR, canvas.height*winTopY); ctx.lineTo(canvas.width*winTopL, canvas.height*winTopY); ctx.lineTo(0, canvas.height*winTopY*0.5); ctx.fill();
-    // Illuminated strip right at the strut convergence, echoing an overhead console light
-    ctx.fillStyle = "rgba(0, 200, 220, 0.5)"; ctx.fillRect(canvas.width*winTopL, canvas.height*winTopY - 3, canvas.width*(winTopR-winTopL), 3);
 
     let botGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height*winBotY);
-    botGrad.addColorStop(0, "#0a0a0d"); botGrad.addColorStop(1, "#2e2e34");
+    botGrad.addColorStop(0, "#141519"); botGrad.addColorStop(1, "#34363e");
     ctx.fillStyle = botGrad;
     ctx.beginPath();
     ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(canvas.width*winBotR, canvas.height*winBotY);
     ctx.lineTo(canvas.width*winBotL, canvas.height*winBotY); ctx.fill();
 
-    // Dashboard: a big central hub (yoke boss) flanked by two panels of instrument lights,
-    // with the shield/heat gauges built into the panels either side of it.
+    // Mechanical support struts: thick tapered beams with a bend joint partway down, running
+    // from the window's top corners to the dashboard, like a real canopy A-frame.
+    [-1, 1].forEach(side => {
+        let topX = canvas.width * (side < 0 ? winTopL : winTopR), topY = canvas.height * winTopY;
+        let botX = canvas.width * (side < 0 ? winBotL : winBotR), botY = canvas.height * winBotY;
+        let jointT = 0.42;
+        let jx = topX + (botX - topX) * jointT, jy = topY + (botY - topY) * jointT;
+        let wTop = canvas.width * 0.012, wBot = canvas.width * 0.028;
+        let nx = -(botY - topY), ny = (botX - topX); let nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+
+        let beamGrad = ctx.createLinearGradient(topX - nx*wBot, topY - ny*wBot, topX + nx*wBot, topY + ny*wBot);
+        beamGrad.addColorStop(0, "#0c0d10"); beamGrad.addColorStop(0.45, "#4a4e58"); beamGrad.addColorStop(0.55, "#3a3d46"); beamGrad.addColorStop(1, "#0c0d10");
+        ctx.fillStyle = beamGrad;
+        ctx.beginPath();
+        ctx.moveTo(topX - nx*wTop, topY - ny*wTop);
+        ctx.lineTo(topX + nx*wTop, topY + ny*wTop);
+        ctx.lineTo(botX + nx*wBot, botY + ny*wBot);
+        ctx.lineTo(botX - nx*wBot, botY - ny*wBot);
+        ctx.closePath(); ctx.fill();
+
+        // Bend joint: a squared mechanical knuckle with a small accent rivet
+        ctx.save(); ctx.translate(jx, jy);
+        ctx.rotate(Math.atan2(botY - topY, botX - topX));
+        ctx.fillStyle = "#22242a"; ctx.fillRect(-wBot*1.1, -wBot*1.3, wBot*2.2, wBot*1.9);
+        ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 1.5; ctx.strokeRect(-wBot*1.1, -wBot*1.3, wBot*2.2, wBot*1.9);
+        ctx.fillStyle = "#5a2020"; ctx.beginPath(); ctx.arc(0, 0, wBot*0.35, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    });
+
+    // Metal trim bar where the struts meet the dashboard, with a soft cyan under-glow
+    ctx.fillStyle = "rgba(0, 200, 220, 0.35)"; ctx.fillRect(canvas.width*winTopL, canvas.height*winTopY - 6, canvas.width*(winTopR-winTopL), 6);
+    let trimGrad = ctx.createLinearGradient(0, canvas.height*winTopY - 3, 0, canvas.height*winTopY);
+    trimGrad.addColorStop(0, "#8a8f99"); trimGrad.addColorStop(1, "#4a4d56");
+    ctx.fillStyle = trimGrad; ctx.fillRect(canvas.width*winTopL, canvas.height*winTopY - 3, canvas.width*(winTopR-winTopL), 3);
+
+    // Dashboard: a big central yoke-mount hub flanked by two instrument screens with
+    // embedded shield/heat gauges, plus a small physical button cluster either side of the hub.
     let dashY = canvas.height * (winBotY + (1 - winBotY) * 0.42), dashCX = canvas.width / 2;
+
+    // Vent slits along the dashboard's top ridge
+    ctx.fillStyle = "#0a0a0c";
+    for (let i = -4; i <= 4; i++) {
+        let vx = dashCX + i * canvas.width * 0.03;
+        ctx.fillRect(vx - 2, canvas.height*winBotY + 4, 4, 10);
+    }
+
+    // Central hub: a thick beveled ring, like a control-yoke mount
     ctx.save(); ctx.translate(dashCX, dashY);
-    ctx.fillStyle = "#0c0c10"; ctx.beginPath(); ctx.arc(0, 0, canvas.height*0.075, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = "rgba(0, 220, 255, 0.5)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, canvas.height*0.05, 0, Math.PI*2); ctx.stroke();
-    applyGlow(ctx, "#00ccff", 10); ctx.fillStyle = "#00e0ff"; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    let hubR = canvas.height * 0.085;
+    let ringGrad = ctx.createRadialGradient(-hubR*0.3, -hubR*0.3, hubR*0.2, 0, 0, hubR);
+    ringGrad.addColorStop(0, "#5a5e68"); ringGrad.addColorStop(0.55, "#2c2e34"); ringGrad.addColorStop(1, "#141519");
+    ctx.fillStyle = ringGrad; ctx.beginPath(); ctx.arc(0, 0, hubR, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#0a0a0c"; ctx.beginPath(); ctx.arc(0, 0, hubR*0.62, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "rgba(220, 230, 240, 0.25)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, hubR*0.8, Math.PI*1.1, Math.PI*1.7); ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 220, 255, 0.4)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, hubR*0.62, 0, Math.PI*2); ctx.stroke();
+    let hubPulse = 0.5 + Math.sin(frames*0.05)*0.2;
+    applyGlow(ctx, "#00ccff", 8); ctx.fillStyle = `rgba(0, 220, 255, ${hubPulse})`; ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
     ctx.restore();
 
     [-1, 1].forEach(side => {
-        let panelW = canvas.width * 0.16, panelH = canvas.height * 0.1;
-        let px = dashCX + side * canvas.width * 0.24 - (side < 0 ? panelW : 0);
-        let py = dashY - panelH / 2;
-        ctx.fillStyle = "#0a0a0d"; ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5;
-        ctx.fillRect(px, py, panelW, panelH); ctx.strokeRect(px, py, panelW, panelH);
-        // small lit button/indicator grid
-        for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
-            let bx = px + 8 + c * (panelW - 16) / 3, by = py + 10 + r * (panelH - 20);
-            let on = Math.sin(frames*0.04 + r*2 + c*1.1 + side*3) > 0.1;
-            ctx.fillStyle = on ? "#33ccff" : "#123044";
-            ctx.fillRect(bx - 3, by - 3, 6, 6);
+        let panelW = canvas.width * 0.19, panelH = canvas.height * 0.13;
+        let px = dashCX + side * canvas.width * 0.26 - (side < 0 ? panelW : 0);
+        let py = dashY - panelH * 0.32;
+
+        // small physical button cluster between the hub and this screen
+        let bx0 = dashCX + side * canvas.width * 0.135;
+        for (let r = 0; r < 3; r++) {
+            let bx = bx0, by = dashY - panelH*0.28 + r * 12;
+            ctx.fillStyle = "#2c2e34"; ctx.fillRect(bx - 5, by - 5, 10, 10);
+            ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 1; ctx.strokeRect(bx - 5, by - 5, 10, 10);
+            ctx.fillStyle = "rgba(0, 200, 255, 0.3)"; ctx.fillRect(bx - 2, by - 2, 4, 4);
         }
-        // gauge dial: shield on the left panel, heat on the right
-        let gx = dashCX + side * canvas.width * 0.16, gy = dashY + panelH * 0.85;
-        ctx.save(); ctx.translate(gx, gy);
-        ctx.fillStyle = "#0a0a0c"; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.stroke();
+
+        // readout strip: small blinking lights above the screen
+        for (let c = 0; c < 5; c++) {
+            let lx = px + 10 + c * (panelW - 20) / 4, ly = py - 12;
+            let on = Math.sin(frames*0.04 + c*1.3 + side*3) > 0.1;
+            ctx.fillStyle = on ? "#33ccff" : "#123044";
+            applyGlow(ctx, on ? "#33ccff" : "transparent", on ? 4 : 0);
+            ctx.fillRect(lx - 4, ly - 4, 8, 8); clearGlow(ctx);
+        }
+
+        // main screen: dark glass panel with a lit bezel
+        let scrGrad = ctx.createLinearGradient(px, py, px, py + panelH);
+        scrGrad.addColorStop(0, "#14181e"); scrGrad.addColorStop(1, "#050608");
+        ctx.fillStyle = scrGrad;
+        ctx.beginPath(); ctx.roundRect(px, py, panelW, panelH, 6); ctx.fill();
+        ctx.strokeStyle = "rgba(0, 200, 220, 0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
+
+        // gauge dial embedded in the screen: shield on the left, heat on the right
+        let gx = px + panelW/2, gy = py + panelH*0.58, gr = panelH * 0.36;
         let val = side < 0 ? (playerShield / playerMaxShield) : (heat / 100);
-        let needleAng = -Math.PI*0.75 + Math.max(0, Math.min(1, val)) * Math.PI*1.5;
-        ctx.strokeStyle = side < 0 ? "#00ffff" : (overheated ? "#ff0000" : "#ffaa00"); ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(needleAng)*12, Math.sin(needleAng)*12); ctx.stroke();
-        ctx.restore();
+        let startAng = Math.PI*0.75, sweep = Math.PI*1.5;
+        ctx.strokeStyle = "#232830"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(gx, gy, gr, startAng, startAng + sweep); ctx.stroke();
+        let arcColor = side < 0 ? "#00e0ff" : (overheated ? "#ff2222" : "#ffaa00");
+        ctx.strokeStyle = arcColor; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(gx, gy, gr, startAng, startAng + sweep * Math.max(0, Math.min(1, val))); ctx.stroke();
+        for (let tk = 0; tk <= 4; tk++) {
+            let ta = startAng + sweep * tk/4;
+            ctx.strokeStyle = "rgba(200, 220, 230, 0.4)"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(gx + Math.cos(ta)*(gr-5), gy + Math.sin(ta)*(gr-5)); ctx.lineTo(gx + Math.cos(ta)*(gr+2), gy + Math.sin(ta)*(gr+2)); ctx.stroke();
+        }
+        let needleAng = startAng + sweep * Math.max(0, Math.min(1, val));
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + Math.cos(needleAng)*(gr-6), gy + Math.sin(needleAng)*(gr-6)); ctx.stroke();
+        ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(gx, gy, 3, 0, Math.PI*2); ctx.fill();
+        ctx.textAlign = "center"; ctx.font = "9px Courier New"; ctx.fillStyle = "rgba(180, 220, 230, 0.6)";
+        ctx.fillText(side < 0 ? "SHIELD" : "HEAT", gx, py + panelH - 6);
     });
 
     let leftGrad = ctx.createLinearGradient(0, 0, canvas.width*winTopL, 0);
