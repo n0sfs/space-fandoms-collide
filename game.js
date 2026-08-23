@@ -1647,6 +1647,11 @@ function render3D() {
     ctx.strokeStyle = "rgba(0, 220, 255, 0.4)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, hubR*0.62, 0, Math.PI*2); ctx.stroke();
     let hubPulse = 0.5 + Math.sin(frames*0.05)*0.2;
     applyGlow(ctx, "#00ccff", 8); ctx.fillStyle = `rgba(0, 220, 255, ${hubPulse})`; ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    // Countdown ring around the hub, draining as the anomaly timer runs out
+    let timeFrac = Math.max(0, Math.min(1, levelTimer3D / 30));
+    ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, hubR*1.12, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = timeFrac < 0.2 ? "#ff3333" : "#00e0ff"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, hubR*1.12, -Math.PI/2, -Math.PI/2 + Math.PI*2*timeFrac); ctx.stroke();
     ctx.restore();
 
     [-1, 1].forEach(side => {
@@ -1654,14 +1659,23 @@ function render3D() {
         let px = dashCX + side * canvas.width * 0.23 - (side < 0 ? panelW : 0);
         let py = dashY - panelH * 0.4;
 
-        // small physical button cluster between the hub and this screen
+        // secondary gauge between the hub and this screen: a 5-segment LED meter for
+        // hull integrity (left) and combo multiplier (right)
         let bx0 = dashCX + side * canvas.width * 0.115;
-        for (let r = 0; r < 2; r++) {
-            let bx = bx0, by = dashY - panelH*0.22 + r * 11;
-            ctx.fillStyle = "#2c2e34"; ctx.fillRect(bx - 4, by - 4, 8, 8);
-            ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 1; ctx.strokeRect(bx - 4, by - 4, 8, 8);
-            ctx.fillStyle = "rgba(0, 200, 255, 0.3)"; ctx.fillRect(bx - 2, by - 2, 4, 4);
+        let segVal = side < 0 ? (playerHp / playerMaxHp) : (combo / 10);
+        let segColor = side < 0 ? (playerHp / playerMaxHp < 0.3 ? "#ff3333" : "#33ff77") : "#ffaa00";
+        let segBase = dashY + panelH * 0.32;
+        for (let s = 0; s < 5; s++) {
+            let by = segBase - s * 9;
+            let lit = segVal * 5 > s;
+            ctx.fillStyle = lit ? segColor : "#1a1d22";
+            if (lit) applyGlow(ctx, segColor, 4);
+            ctx.fillRect(bx0 - 4, by - 4, 8, 8);
+            if (lit) clearGlow(ctx);
+            ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 1; ctx.strokeRect(bx0 - 4, by - 4, 8, 8);
         }
+        ctx.textAlign = "center"; ctx.font = "7px Courier New"; ctx.fillStyle = "rgba(180, 220, 230, 0.5)";
+        ctx.fillText(side < 0 ? "HULL" : "COMBO", bx0, segBase + 12);
 
         // readout strip: small blinking lights above the screen
         for (let c = 0; c < 5; c++) {
