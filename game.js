@@ -53,6 +53,7 @@ const pilotRecordBtn = document.getElementById("pilotRecordBtn");
 const pilotRecordBackBtn = document.getElementById("pilotRecordBackBtn");
 const pilotRecordOverlay = document.getElementById("pilotRecordOverlay");
 const pilotRecordListEl = document.getElementById("pilotRecordList");
+const trailPickerEl = document.getElementById("trailPicker");
 
 // Persistent Data
 let totalScrap = 0;
@@ -63,6 +64,23 @@ let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, game
 let unlockedAch = {};
 let achievementToasts = [];
 let tookDamageThisHyperspace = false;
+let runKills = 0, runBestCombo = 1;
+let gameOverMessage = "";
+let equippedTrail = "classic";
+
+const ENCOURAGEMENTS = [
+    "NICE FLYING, PILOT!", "SO CLOSE! TRY AGAIN!", "THE GALAXY NEEDS YOU!",
+    "SHAKE IT OFF, ACE!", "ONE MORE RUN?", "YOU'LL GET 'EM NEXT TIME!",
+    "NOT BAD FOR A ROOKIE!", "THAT WAS EPIC!"
+];
+
+const TRAIL_COLORS = [
+    { id: "classic", color: "#00ffff", label: "Classic", requires: null },
+    { id: "gold", color: "#ffcc00", label: "Gold Rush", requires: "level_20" },
+    { id: "violet", color: "#ff33ff", label: "Hive Violet", requires: "hive_breaker" },
+    { id: "inferno", color: "#ff3300", label: "Inferno", requires: "boss_slayer" },
+    { id: "rainbow", color: null, label: "Rainbow", requires: "ace" },
+];
 
 const ACHIEVEMENTS = [
     { id: "first_blood", icon: "\u{1F4A5}", title: "First Contact", desc: "Destroy your first target" },
@@ -86,6 +104,7 @@ function unlockAchievement(id) {
     unlockedAch[id] = true;
     saveGameData();
     renderAchievementsList();
+    renderTrailPicker();
     achievementToasts.push({ icon: ach.icon, title: ach.title, life: 4.0 });
     playSfx('achievement');
 }
@@ -123,6 +142,26 @@ function renderPilotRecord() {
         ["Achievements Unlocked", `${Object.keys(unlockedAch).length}/${ACHIEVEMENTS.length}`],
     ];
     pilotRecordListEl.innerHTML = rows.map(([label, val]) => `<div class="record-row"><span>${label}</span><span>${val}</span></div>`).join('');
+}
+
+function equipTrail(id) {
+    let tc = TRAIL_COLORS.find(t => t.id === id);
+    if (!tc || (tc.requires && !unlockedAch[tc.requires])) return;
+    equippedTrail = id;
+    try { localStorage.setItem("sfc_trailColor", id); } catch(e) {}
+    renderTrailPicker();
+}
+
+function renderTrailPicker() {
+    if (!trailPickerEl) return;
+    trailPickerEl.innerHTML = TRAIL_COLORS.map(tc => {
+        let unlocked = !tc.requires || unlockedAch[tc.requires];
+        let swatchColor = tc.id === "rainbow" ? "conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" : tc.color;
+        return `<button type="button" class="trail-swatch ${equippedTrail === tc.id ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" data-trail="${tc.id}" title="${unlocked ? tc.label : tc.label + ' (locked)'}" style="background:${swatchColor}">${unlocked ? '' : '\u{1F512}'}</button>`;
+    }).join('');
+    trailPickerEl.querySelectorAll('.trail-swatch').forEach(btn => {
+        btn.addEventListener('click', () => equipTrail(btn.getAttribute('data-trail')));
+    });
 }
 
 function updateAchievementToasts(dt) {
@@ -172,6 +211,7 @@ function loadSaveData() {
             lifetimeStats.gamesPlayed = p.gamesPlayed || 0; lifetimeStats.highestLevel = p.highestLevel || 0; lifetimeStats.hyperspaceCleared = p.hyperspaceCleared || 0;
         }
         let storedAch = localStorage.getItem("sfc_achievements"); if (storedAch) unlockedAch = JSON.parse(storedAch);
+        let storedTrail = localStorage.getItem("sfc_trailColor"); if (storedTrail && TRAIL_COLORS.some(t => t.id === storedTrail)) equippedTrail = storedTrail;
     } catch(e) {
         localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
     }
@@ -181,6 +221,7 @@ function loadSaveData() {
     updateMuteUI();
     updateMenuUI();
     renderAchievementsList();
+    renderTrailPicker();
     if (typeof updateBuilderUnlockUI === "function") updateBuilderUnlockUI();
     if (lastShipId && typeof setMenuShip === "function") setMenuShip(lastShipId);
     maybeShowFirstRunHint();
@@ -232,7 +273,7 @@ let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown:
 let selectedShipType = "xwing", currentPlayerName = "AAA";
 let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [], floatingTexts = [], scrapDrops = [];
 let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
-let rapidFireTimer = 0, slowmoTimer = 0;
+let rapidFireTimer = 0, slowmoTimer = 0, chaosTimer = 0;
 let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
 // --- 3D STATE VARIABLES ---
@@ -265,6 +306,14 @@ function playSfx(type) {
                 o.type = 'triangle'; o.frequency.setValueAtTime(freq, t0);
                 g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.12, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
                 o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.26);
+            });
+        }
+        else if (type === 'chaos') {
+            [392.00, 523.25, 659.25, 783.99, 1046.50, 1318.51].forEach((freq, i) => {
+                let o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = now + i * 0.05;
+                o.type = 'square'; o.frequency.setValueAtTime(freq, t0);
+                g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.08, t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15);
+                o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.16);
             });
         }
     } catch (e) {}
@@ -1206,7 +1255,7 @@ function spawnTarget3D() {
     targets3D.push(t);
 }
 
-const PowerupColors = { M: "#ff00ff", S: "#00ffff", H: "#33ff33", B: "#ffcc00", R: "#ff8800", T: "#66ccff" };
+const PowerupColors = { M: "#ff00ff", S: "#00ffff", H: "#33ff33", B: "#ffcc00", R: "#ff8800", T: "#66ccff", C: "#ff33ff" };
 function spawnPowerup() {
     let rand = Math.random(); let type = 'M';
     if (rand > 0.30) type = 'S';
@@ -1214,6 +1263,7 @@ function spawnPowerup() {
     if (rand > 0.70) type = 'B';
     if (rand > 0.80) type = 'R';
     if (rand > 0.92) type = 'T';
+    if (rand > 0.97) type = 'C';
     powerups.push({ x: Math.random() * canvas.width, y: -20, xv: (Math.random() - 0.5) * 2, yv: 1 + Math.random(), r: 15, angle: 0, type: type });
     powerupSpawnedThisLevel = true;
 }
@@ -1231,6 +1281,7 @@ function updateUI() {
     if (multishotTimer > 0) pTxt.push(`MULTI ${Math.ceil(multishotTimer)}s`);
     if (rapidFireTimer > 0) pTxt.push(`RAPID ${Math.ceil(rapidFireTimer)}s`);
     if (slowmoTimer > 0) pTxt.push(`SLOW ${Math.ceil(slowmoTimer)}s`);
+    if (chaosTimer > 0) pTxt.push(`PARTY ${Math.ceil(chaosTimer)}s`);
     if (statusEl) { statusEl.innerText = pTxt.length ? pTxt.join(" ") : "—"; statusEl.style.color = pTxt.length ? "#ff00ff" : "#555"; }
 
     if (swarmBarEl) {
@@ -1243,6 +1294,7 @@ function updateUI() {
             swarmBarEl.classList.add("hidden");
         }
     }
+    if (combo > runBestCombo) runBestCombo = combo;
     checkAchievements();
 }
 
@@ -1261,7 +1313,7 @@ function damagePlayer(amt) {
     if (playerHp <= 0) {
         playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
         if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
-        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap; checkAndSaveScore(); saveGameData(); gameState = "GAMEOVER"; }
+        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap; checkAndSaveScore(); saveGameData(); gameOverMessage = ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]; gameState = "GAMEOVER"; }
     }
     updateUI();
 }
@@ -1279,7 +1331,8 @@ function startGame(shipId) {
     diffScoreMult = gameDifficulty === "easy" ? 0.75 : gameDifficulty === "hard" ? 1.35 : gameDifficulty === "insane" ? 1.75 : 1.0;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
+    runKills = 0; runBestCombo = 1;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
@@ -1445,6 +1498,7 @@ function update3D(dt) {
     }
     
     if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
+    if (chaosTimer > 0) { chaosTimer -= dt; if (chaosTimer < 0) chaosTimer = 0; }
 
     levelTimer3D -= dt;
     if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); } 
@@ -1483,7 +1537,7 @@ function update3D(dt) {
                 let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0);
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
-                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
+                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++; runKills++;
                     score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
                 }
             }
@@ -1536,7 +1590,18 @@ function update(dt) {
     if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
     if (rapidFireTimer > 0) { rapidFireTimer -= dt; if (rapidFireTimer < 0) rapidFireTimer = 0; if (frames % 30 === 0) updateUI(); }
     if (slowmoTimer > 0) { slowmoTimer -= dt; if (slowmoTimer < 0) slowmoTimer = 0; if (frames % 30 === 0) updateUI(); }
+    if (chaosTimer > 0) { chaosTimer -= dt; if (chaosTimer < 0) chaosTimer = 0; if (frames % 30 === 0) updateUI(); }
     if (level > 2 && !powerupSpawnedThisLevel && targets.length < 5 && Math.random() < 0.005) spawnPowerup();
+
+    // Cosmetic engine trail, unlocked via achievements and equipped from the main menu -- purely
+    // decorative, spawned as ordinary particles so it rides the existing fade/cleanup logic.
+    if (ship.thrusting && equippedTrail !== "classic" && frames % 3 === 0) {
+        let tc = TRAIL_COLORS.find(t => t.id === equippedTrail);
+        if (tc) {
+            let col = tc.id === "rainbow" ? `hsl(${(frames*6)%360},100%,60%)` : tc.color;
+            particles.push({ x: ship.x - Math.cos(ship.angle)*ship.r*0.6, y: ship.y - Math.sin(ship.angle)*ship.r*0.6, xv: -ship.xv*0.3, yv: -ship.yv*0.3, life: 1.0, color: col, size: 4 });
+        }
+    }
 
     for(let i = floatingTexts.length-1; i>=0; i--) { let t = floatingTexts[i]; t.y -= 30 * dt; t.life -= dt * 1.5; if(t.life <= 0) floatingTexts.splice(i, 1); }
     for(let i = scrapDrops.length-1; i>=0; i--) { 
@@ -1567,6 +1632,7 @@ function update(dt) {
             else if (p.type === 'B') { bombs++; spawnText(ship.x, ship.y, "+1 BOMB", "#ffcc00"); }
             else if (p.type === 'R') { rapidFireTimer = 8.0; spawnText(ship.x, ship.y, "RAPID FIRE", "#ff8800"); }
             else if (p.type === 'T') { slowmoTimer = 6.0; spawnText(ship.x, ship.y, "TIME SLOW", "#66ccff"); }
+            else if (p.type === 'C') { chaosTimer = 7.0; rapidFireTimer = Math.max(rapidFireTimer, 7.0); playSfx('chaos'); shake += 6; spawnText(ship.x, ship.y, "PARTY MODE!", "#ff33ff", 22); }
             score += diffScoreMult *150 * combo; updateUI(); powerups.splice(i, 1);
         }
     }
@@ -1689,7 +1755,7 @@ function update(dt) {
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
                 spawnParticles(t.x, t.y, (t.type==="asteroid"||t.type==="satellite") ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
                 spawnText(t.x, t.y, "DESTROYED", "#ff0000");
-                combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++;
+                combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++; runKills++;
 
                 let diffMod = 1 + (level * 0.1);
                 if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
@@ -1986,7 +2052,7 @@ function render() {
 
     powerups.forEach(p => {
         ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
-        let color = PowerupColors[p.type] || "#33ff33";
+        let color = p.type === 'C' ? `hsl(${(frames*4)%360},100%,60%)` : (PowerupColors[p.type] || "#33ff33");
         applyGlow(ctx, color, 15); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(-p.r/2, -p.r/2, p.r, p.r);
         ctx.fillStyle = color; ctx.font = "bold 16px Courier"; ctx.fillText(p.type, -5, 5); clearGlow(ctx); ctx.restore();
     });
@@ -2000,25 +2066,38 @@ function render() {
     applyGlow(ctx, "#ff0000", 15); ctx.fillStyle = "#ff5555";
     enemyBullets.forEach(b => { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); ctx.fillRect(-6, -2, 12, 4); ctx.restore(); }); clearGlow(ctx);
 
-    bullets.forEach(b => { 
-        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv)); 
-        if (b.isHack) { applyGlow(ctx, "#00ff00", 12); ctx.fillStyle = "#00ff00"; ctx.font = "bold 14px Courier New"; ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4); clearGlow(ctx); } 
-        else if (b.isEmpBolt) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke(); clearGlow(ctx); } 
-        else { ctx.fillStyle = ShipDesigns[selectedShipType].laserColor; applyGlow(ctx, ShipDesigns[selectedShipType].laserColor, 10); ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); clearGlow(ctx); }
-        ctx.restore(); 
+    bullets.forEach((b, bi) => {
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.yv, b.xv));
+        if (b.isHack) { applyGlow(ctx, "#00ff00", 12); ctx.fillStyle = "#00ff00"; ctx.font = "bold 14px Courier New"; ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4); clearGlow(ctx); }
+        else if (b.isEmpBolt) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke(); clearGlow(ctx); }
+        else {
+            let laserColor = chaosTimer > 0 ? `hsl(${(frames*8 + bi*40)%360},100%,60%)` : ShipDesigns[selectedShipType].laserColor;
+            ctx.fillStyle = laserColor; applyGlow(ctx, laserColor, 10); ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); clearGlow(ctx);
+        }
+        ctx.restore();
     });
 
     if (gameState === "PLAYING" || gameState === "LEVEL_TRANSITION" || gameState === "PAUSED") {
         if (invulnTimer <= 0 || frames % 10 < 5) {
-            ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.angle); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
+            let chaosScale = chaosTimer > 0 ? 1 + Math.sin(frames * 0.3) * 0.25 : 1;
+            ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.angle); ctx.scale(chaosScale, chaosScale); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
             if (playerShield > 0) { applyGlow(ctx, "#00ffff", 10); ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + (playerShield/100)*0.5})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.6, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
             if (multishotTimer > 0) { applyGlow(ctx, "#ff00ff", 10); ctx.strokeStyle = `rgba(255, 0, 255, ${Math.abs(Math.sin(frames/10))})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.3, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
+            if (chaosTimer > 0) { let hue = (frames*8)%360; applyGlow(ctx, `hsl(${hue},100%,60%)`, 14); ctx.strokeStyle = `hsl(${hue},100%,60%)`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 2.0, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
         }
     }
-    
+
     ctx.textAlign = "center";
     floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
-    
+
+    if (chaosTimer > 0) {
+        // Edge-only rainbow vignette so PARTY MODE reads as a fun cue without washing out play
+        let vign = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height*0.35, canvas.width/2, canvas.height/2, canvas.height*0.75);
+        let hue = (frames*8)%360;
+        vign.addColorStop(0, `hsla(${hue},100%,60%,0)`); vign.addColorStop(1, `hsla(${hue},100%,60%,0.22)`);
+        ctx.fillStyle = vign; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
     
     if (gameState === "PLAYING" && !isTouchDevice) {
@@ -2037,5 +2116,27 @@ function drawMenuOverlays() {
     ctx.textAlign = "center";
     if (gameState === "PAUSED") { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#fff"; ctx.font = "bold 40px Courier New"; ctx.fillText("PAUSED", canvas.width/2, canvas.height/2); }
     if (gameState === "LEVEL_TRANSITION") { ctx.fillStyle = `rgba(0,0,0,${1 - hyperspace/2})`; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#33ccff"; ctx.font = "bold 40px Courier New"; ctx.fillText("JUMPING TO SECTOR " + level, canvas.width/2, canvas.height/2); }
-    if (gameState === "GAMEOVER") { ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = "#ffcc00"; ctx.font = "bold 50px Courier New"; ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20); ctx.fillStyle = "white"; ctx.font = "20px Courier New"; ctx.fillText("Press 'R' to return", canvas.width / 2, canvas.height / 2 + 40); }
+    if (gameState === "GAMEOVER") {
+        ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        let cx = canvas.width / 2, cy = canvas.height / 2;
+        ctx.fillStyle = "#ffcc00"; ctx.font = "bold 44px Courier New"; ctx.fillText("GAME OVER", cx, cy - 130);
+        ctx.fillStyle = "#33ccff"; ctx.font = "bold 18px Courier New"; ctx.fillText(gameOverMessage || "NICE FLYING, PILOT!", cx, cy - 95);
+
+        let panelW = 320, panelH = 150, px = cx - panelW/2, py = cy - 65;
+        ctx.fillStyle = "rgba(20, 20, 24, 0.9)"; ctx.strokeStyle = "#444"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(px, py, panelW, panelH, 8); ctx.fill(); ctx.stroke();
+        let rows = [
+            ["LEVEL REACHED", level], ["ENEMIES DESTROYED", runKills], ["BEST COMBO", runBestCombo + "x"],
+            ["SCRAP EARNED", currentRunScrap], ["FINAL SCORE", Math.round(score)],
+        ];
+        ctx.font = "14px Courier New";
+        rows.forEach(([label, val], i) => {
+            let ry = py + 26 + i * 24;
+            ctx.textAlign = "left"; ctx.fillStyle = "#999"; ctx.fillText(label, px + 16, ry);
+            ctx.textAlign = "right"; ctx.fillStyle = "#fff"; ctx.fillText(String(val), px + panelW - 16, ry);
+        });
+        ctx.textAlign = "center";
+
+        ctx.fillStyle = "white"; ctx.font = "16px Courier New"; ctx.fillText("Press 'R' to return", cx, cy + 115);
+    }
 }

@@ -161,6 +161,17 @@
         .launch-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(255, 204, 0, 0.15); border-color: #ffcc00; color: #ffcc00; }
         .launch-btn:hover { background: #ffcc00; color: #000; }
 
+        /* Trail Picker */
+        .trail-picker-wrap { margin-bottom: 15px; text-align: left; }
+        .trail-picker-wrap label { display: block; font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; }
+        .trail-picker { display: flex; gap: 8px; }
+        .trail-swatch {
+            width: 30px; height: 30px; border-radius: 50%; border: 2px solid #444; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 12px; padding: 0;
+        }
+        .trail-swatch.equipped { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
+        .trail-swatch.locked { opacity: 0.35; cursor: not-allowed; filter: grayscale(1); }
+
         /* Ship Builder */
         .builder-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(0, 255, 200, 0.1); border-color: #00ffc8; color: #00ffc8; }
         .builder-btn:hover:not(:disabled) { background: #00ffc8; color: #000; }
@@ -261,6 +272,7 @@
             <span style="background:#33ff33">[H] Hull Fix</span>
             <span style="background:#ff8800">[R] Rapid</span>
             <span style="background:#66ccff">[T] Slow</span>
+            <span style="background:linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta)">[C] Party</span>
         </div>
     </div>
 
@@ -326,6 +338,12 @@
                         </button>
                         <div class="ship-select-list hidden" id="shipSelectList"></div>
                     </div>
+
+                    <div class="trail-picker-wrap">
+                        <label>ENGINE TRAIL</label>
+                        <div id="trailPicker" class="trail-picker"></div>
+                    </div>
+
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
                     <button class="ship-btn builder-btn" id="shipBuilderBtn" title="Reach Level 20 to unlock">🛠️ SHIP BUILDER (LOCKED)</button>
                     <button class="ship-btn achievements-btn" id="achievementsBtn">🏆 ACHIEVEMENTS (0/12)</button>
