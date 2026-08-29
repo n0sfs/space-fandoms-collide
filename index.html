@@ -161,6 +161,12 @@
         .launch-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(255, 204, 0, 0.15); border-color: #ffcc00; color: #ffcc00; }
         .launch-btn:hover { background: #ffcc00; color: #000; }
 
+        .more-toggle-btn {
+            display: block; width: 100%; margin-bottom: 15px; padding: 6px; font-size: 11px; font-family: inherit;
+            background: none; border: 1px dashed #444; color: #777; cursor: pointer; border-radius: 4px; transition: 0.2s;
+        }
+        .more-toggle-btn:hover { border-color: #888; color: #ccc; }
+
         /* Trail Picker */
         .trail-picker-wrap { margin-bottom: 15px; text-align: left; }
         .trail-picker-wrap label { display: block; font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; }
@@ -319,17 +325,6 @@
                         <button class="diff-btn insane-btn" data-diff="insane">INSANE</button>
                     </div>
 
-                    <!-- Upgrade Shop -->
-                    <div id="upgradeShop">
-                        <h3>BLACK MARKET (Scrap: <span id="menuScrap">0</span>)</h3>
-                        <div class="shop-grid">
-                            <button id="upgBombBtn" class="shop-btn">+1 BOMB (500)</button>
-                            <button id="upgSpeedBtn" class="shop-btn">+5% SPD (300)</button>
-                            <button id="upgShieldBtn" class="shop-btn">+20 SHIELD (400)</button>
-                            <button id="upgPowerBtn" class="shop-btn">+1 DMG (450)</button>
-                        </div>
-                    </div>
-
                     <div class="ship-select-wrap" id="shipSelectWrap">
                         <button type="button" class="ship-select-current" id="shipSelectCurrent">
                             <img id="shipSelectIcon" alt="">
@@ -339,17 +334,32 @@
                         <div class="ship-select-list hidden" id="shipSelectList"></div>
                     </div>
 
-                    <div class="trail-picker-wrap">
-                        <label>ENGINE TRAIL</label>
-                        <div id="trailPicker" class="trail-picker"></div>
-                    </div>
-
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
-                    <button class="ship-btn builder-btn" id="shipBuilderBtn" title="Reach Level 20 to unlock">🛠️ SHIP BUILDER (LOCKED)</button>
-                    <button class="ship-btn achievements-btn" id="achievementsBtn">🏆 ACHIEVEMENTS (0/12)</button>
-                    <button class="ship-btn record-btn" id="pilotRecordBtn">📊 PILOT RECORD</button>
 
-                    <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
+                    <button type="button" class="more-toggle-btn" id="moreToggleBtn">▾ MORE OPTIONS</button>
+                    <div id="menuExtras" class="hidden">
+                        <!-- Upgrade Shop -->
+                        <div id="upgradeShop">
+                            <h3>BLACK MARKET (Scrap: <span id="menuScrap">0</span>)</h3>
+                            <div class="shop-grid">
+                                <button id="upgBombBtn" class="shop-btn">+1 BOMB (500)</button>
+                                <button id="upgSpeedBtn" class="shop-btn">+5% SPD (300)</button>
+                                <button id="upgShieldBtn" class="shop-btn">+20 SHIELD (400)</button>
+                                <button id="upgPowerBtn" class="shop-btn">+1 DMG (450)</button>
+                            </div>
+                        </div>
+
+                        <div class="trail-picker-wrap">
+                            <label>ENGINE TRAIL</label>
+                            <div id="trailPicker" class="trail-picker"></div>
+                        </div>
+
+                        <button class="ship-btn builder-btn" id="shipBuilderBtn" title="Reach Level 20 to unlock">🛠️ SHIP BUILDER (LOCKED)</button>
+                        <button class="ship-btn achievements-btn" id="achievementsBtn">🏆 ACHIEVEMENTS (0/12)</button>
+                        <button class="ship-btn record-btn" id="pilotRecordBtn">📊 PILOT RECORD</button>
+
+                        <div id="leaderboard"><h3>TOP 5 ACES</h3><div id="leaderboardList"></div></div>
+                    </div>
                 </div>
 
                 <!-- Achievements -->

@@ -35,6 +35,8 @@ const leaderboardList = document.getElementById("leaderboardList");
 const menuScrapEl = document.getElementById("menuScrap");
 
 const diffButtons = document.querySelectorAll(".diff-btn");
+const moreToggleBtn = document.getElementById("moreToggleBtn");
+const menuExtras = document.getElementById("menuExtras");
 const resumeBtn = document.getElementById("resumeBtn");
 const restartGameBtn = document.getElementById("restartGameBtn");
 const quitBtn = document.getElementById("quitBtn");
@@ -160,7 +162,9 @@ function renderTrailPicker() {
         return `<button type="button" class="trail-swatch ${equippedTrail === tc.id ? 'equipped' : ''} ${unlocked ? '' : 'locked'}" data-trail="${tc.id}" title="${unlocked ? tc.label : tc.label + ' (locked)'}" style="background:${swatchColor}">${unlocked ? '' : '\u{1F512}'}</button>`;
     }).join('');
     trailPickerEl.querySelectorAll('.trail-swatch').forEach(btn => {
-        btn.addEventListener('click', () => equipTrail(btn.getAttribute('data-trail')));
+        const equipAction = (e) => { if(e) e.preventDefault(); initAudio(); equipTrail(btn.getAttribute('data-trail')); };
+        btn.addEventListener('click', equipAction);
+        btn.addEventListener('touchstart', equipAction, { passive: false });
     });
 }
 
@@ -935,6 +939,15 @@ function closeBuilder() {
     if (menuOverlay) menuOverlay.classList.remove("hidden");
 }
 
+if (moreToggleBtn) {
+    const toggleMoreAction = (e) => {
+        if(e) e.preventDefault(); initAudio();
+        let willShow = menuExtras.classList.contains("hidden");
+        menuExtras.classList.toggle("hidden");
+        moreToggleBtn.innerText = willShow ? "▴ FEWER OPTIONS" : "▾ MORE OPTIONS";
+    };
+    moreToggleBtn.addEventListener("click", toggleMoreAction); moreToggleBtn.addEventListener("touchstart", toggleMoreAction, { passive: false });
+}
 if (shipBuilderBtn) { const openAction = (e) => { if(e) e.preventDefault(); initAudio(); openBuilder(); }; shipBuilderBtn.addEventListener("click", openAction); shipBuilderBtn.addEventListener("touchstart", openAction, { passive: false }); }
 if (achievementsBtn) { const openAchAction = (e) => { if(e) e.preventDefault(); initAudio(); renderAchievementsList(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(achievementsOverlay) achievementsOverlay.classList.remove("hidden"); }; achievementsBtn.addEventListener("click", openAchAction); achievementsBtn.addEventListener("touchstart", openAchAction, { passive: false }); }
 if (achievementsBackBtn) { const closeAchAction = (e) => { if(e) e.preventDefault(); initAudio(); if(achievementsOverlay) achievementsOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; achievementsBackBtn.addEventListener("click", closeAchAction); achievementsBackBtn.addEventListener("touchstart", closeAchAction, { passive: false }); }
