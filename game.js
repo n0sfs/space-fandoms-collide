@@ -406,6 +406,7 @@ let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI /
 // --- 3D STATE VARIABLES ---
 let is3DMode = false, levelTimer3D = 0;
 let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged = false;
+let sentinelSpawnQueue = 0, sentinelSpawnTimer = 0, sentinelSpeedMod = 1;
 const FOV = 500;
 let camX = 0, camY = 0;
 let targets3D = [], bullets3D = [], enemyBullets3D = [], stars3D = [];
@@ -1267,6 +1268,25 @@ const TargetDesigns = {
             if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-20, r*2*hp, 6); ctx.restore(); }
         }
     },
+    boss_worm: {
+        draw: (ctx, r, t) => {
+            if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill(); return; }
+            popHalo(ctx, r, "#88cc44", 0.4);
+            let headGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.15);
+            headGrad.addColorStop(0, "#a8d97e"); headGrad.addColorStop(0.55, "#4f7a3a"); headGrad.addColorStop(1, "#182a10");
+            ctx.fillStyle = headGrad; ctx.strokeStyle = "#0e1a0a"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.ellipse(0, 0, r * 1.1, r * 0.85, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            // chitin ridge plates fanning back from the head
+            ctx.strokeStyle = "rgba(15, 25, 8, 0.5)"; ctx.lineWidth = 2;
+            for (let i = -0.6; i <= 0.6; i += 0.3) { ctx.beginPath(); ctx.arc(0, 0, r * (0.55 + Math.abs(i) * 0.35), i - 0.28, i + 0.28); ctx.stroke(); }
+            // the only thing that ever hits back: a glowing maw
+            applyGlow(ctx, "#ff3333", 14); ctx.fillStyle = "#3a0505";
+            ctx.beginPath(); ctx.ellipse(r * 0.65, 0, r * 0.42, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#ff5555"; ctx.beginPath(); ctx.ellipse(r * 0.72, 0, r * 0.16, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+            clearGlow(ctx);
+            if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-25, r*2*hp, 6); ctx.restore(); }
+        }
+    },
     sentinel: {
         draw: (ctx, r, t) => {
             popHalo(ctx, r, "#ff0000", 0.5);
@@ -1576,7 +1596,7 @@ function startGame(shipId) {
     diffScoreMult = gameDifficulty === "easy" ? 0.75 : gameDifficulty === "hard" ? 1.35 : gameDifficulty === "insane" ? 1.75 : 1.0;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0;
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0;
     runKills = 0; runBestCombo = 1;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
@@ -1620,7 +1640,14 @@ function startLevel() {
 
     if (level % 5 === 0 && !is3DMode) {
         if (level % 15 === 0) {
-            let numSentinels = Math.floor(40 * diffMult); for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
+            // Trickle the swarm in instead of dumping the whole roster on the player at once --
+            // an initial wave, then the rest arrive gradually (see the update() loop).
+            let numSentinels = Math.floor(32 * diffMult);
+            let initialWave = Math.min(6, numSentinels);
+            for (let i = 0; i < initialWave; i++) spawnTarget("sentinel", 12, speedMod * 1.0);
+            sentinelSpawnQueue = numSentinels - initialWave;
+            sentinelSpeedMod = speedMod;
+            sentinelSpawnTimer = 1.2;
         } else if (level % 25 === 0) {
             let numMinions = Math.floor((12 + level * 0.3) * diffMult);
             let queenIndex = Math.floor(Math.random() * numMinions);
@@ -1649,6 +1676,11 @@ function startLevel() {
             let bossR = 85 + (level * 1.1); spawnTarget("boss_carrier", bossR, speedMod * 0.15);
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((50 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.launchTimer = 3.0;
+        } else if (level % 65 === 0) {
+            let bossR = 42; spawnTarget("boss_worm", bossR, speedMod * 0.4);
+            let boss = targets[targets.length - 1];
+            boss.maxHp = Math.floor((70 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
+            boss.trail = []; boss.wiggle = Math.random() * Math.PI * 2;
         } else {
             let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
             let boss = targets[targets.length - 1];
@@ -1838,6 +1870,17 @@ function update(dt) {
     if (chaosTimer > 0) { chaosTimer -= dt; if (chaosTimer < 0) chaosTimer = 0; if (frames % 30 === 0) updateUI(); }
     if (level > 2 && !powerupSpawnedThisLevel && targets.length < 5 && Math.random() < 0.005) spawnPowerup();
 
+    // Sentinel Swarm trickles in rather than dumping its whole roster on the player at once --
+    // see the level % 15 === 0 branch in startLevel() for the initial wave.
+    if (sentinelSpawnQueue > 0) {
+        sentinelSpawnTimer -= dt;
+        if (sentinelSpawnTimer <= 0 && targets.length < 20) {
+            spawnTarget("sentinel", 12, sentinelSpeedMod * 1.0);
+            sentinelSpawnQueue--;
+            sentinelSpawnTimer = 0.5;
+        }
+    }
+
     // Cosmetic engine trail, unlocked via achievements and equipped from the main menu -- purely
     // decorative, spawned as ordinary particles so it rides the existing fade/cleanup logic.
     if (ship.thrusting && equippedTrail !== "classic" && frames % 3 === 0) {
@@ -1911,6 +1954,30 @@ function update(dt) {
                 playSfx('enemyShoot'); shake += 4;
                 for (let k = 0; k < 3; k++) spawnTarget("tie_interceptor", 15, 1.8 + (level * 0.1), t.x - t.r*1.3, t.y + (k-1)*20);
                 t.launchTimer = 6.0;
+            }
+        }
+        if (t.type === "boss_worm") {
+            // Slither: orbit toward a preferred distance like the hive queen, but with a
+            // sine-wave wiggle added to the heading so the path weaves instead of arcing cleanly.
+            if (t.trail === undefined) t.trail = [];
+            if (t.wiggle === undefined) t.wiggle = 0;
+            t.wiggle += dt * 2.2;
+            let dx = ship.x - t.x, dy = ship.y - t.y;
+            let distToPlayer = Math.hypot(dx, dy) || 1;
+            let angToPlayer = Math.atan2(dy, dx);
+            let preferredDist = 220;
+            let approachAng = distToPlayer > preferredDist ? angToPlayer : angToPlayer + Math.PI;
+            let tangentAng = angToPlayer + Math.PI / 2;
+            let vx = Math.cos(approachAng) * 0.4 + Math.cos(tangentAng) * 0.6;
+            let vy = Math.sin(approachAng) * 0.4 + Math.sin(tangentAng) * 0.6;
+            let headingAng = Math.atan2(vy, vx) + Math.sin(t.wiggle) * 0.6;
+            let spd = 1.9;
+            t.xv = Math.cos(headingAng) * spd; t.yv = Math.sin(headingAng) * spd; t.angle = headingAng;
+            // Distance-gated rather than frame-gated, so segment spacing stays consistent
+            // regardless of frame rate (frames only advances inside the real rAF loop).
+            let lastPt = t.trail[0];
+            if (!lastPt || Math.hypot(t.x - lastPt.x, t.y - lastPt.y) > 22) {
+                t.trail.unshift({ x: t.x, y: t.y }); if (t.trail.length > 11) t.trail.pop();
             }
         }
         if (t.type === "hive_minion") {
@@ -2286,7 +2353,22 @@ function render() {
     lightTrails.forEach(t => { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = `rgba(0, 255, 255, ${t.life / 8.0})`; ctx.beginPath(); ctx.arc(t.x, t.y, 6, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); });
     scrapDrops.forEach(s => { applyGlow(ctx, "#ff00ff", 10); ctx.fillStyle = `rgba(255, 0, 255, ${s.life/8})`; ctx.fillRect(s.x-3, s.y-3, 6, 6); clearGlow(ctx); });
 
-    targets.forEach(t => { 
+    // Worm body segments render in world space, behind the head drawn in the normal pass below.
+    targets.forEach(t => {
+        if (t.type !== "boss_worm" || !t.trail) return;
+        t.trail.forEach((seg, i) => {
+            let segR = t.r * (0.82 - i * 0.06);
+            if (segR < 4) return;
+            ctx.save(); ctx.translate(seg.x, seg.y);
+            let segGrad = ctx.createRadialGradient(-segR*0.3, -segR*0.3, 0, 0, 0, segR);
+            segGrad.addColorStop(0, "#7fb85c"); segGrad.addColorStop(1, "#233a1c");
+            ctx.fillStyle = segGrad; ctx.strokeStyle = "#0e1a0a"; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(0, 0, segR, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.restore();
+        });
+    });
+
+    targets.forEach(t => {
         ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle); 
         if (t.stunned > 0) { ctx.translate((Math.random()-0.5)*5, (Math.random()-0.5)*5); } 
         if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 

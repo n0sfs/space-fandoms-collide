@@ -130,6 +130,20 @@
         if (targets.length <= before) throw new Error('carrier did not launch fighters');
     });
 
+    test('boss worm spawns at level 65, grows a trail, and can be killed', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 65; startLevel();
+        let worm = targets.find(t => t.type === 'boss_worm');
+        if (!worm) throw new Error('boss_worm did not spawn at level 65');
+        for (let f = 0; f < 20; f++) update(0.016);
+        if (!worm.trail || worm.trail.length === 0) throw new Error('worm never grew a body trail');
+        worm.hp = 1;
+        let before = lifetimeStats.bossKills;
+        mouse.leftDown = true; fireCooldown = 0;
+        for (let f = 0; f < 20 && targets.includes(worm); f++) { mouse.x = worm.x; mouse.y = worm.y; positionShipNear(worm, 60); update(0.016); }
+        if (lifetimeStats.bossKills <= before) throw new Error('worm kill did not register as a boss kill');
+    });
+
     test('clearing a hyperspace anomaly untouched unlocks "untouchable"', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 7; startLevel();
