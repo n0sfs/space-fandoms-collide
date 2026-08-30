@@ -16,6 +16,9 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **Achievements & Pilot Record:** 12 unlockable milestones spanning progression, combat, and skill, each popping a toast with its own fanfare. A Pilot Record panel tracks lifetime stats — games played, kills, bosses defeated, hyperspace anomalies cleared, and more.
 * **Cosmetic Engine Trails:** Unlock and equip colored engine trails (Gold Rush, Hive Violet, Inferno, and a Rainbow trail for the toughest achievement) as a visible reward for your progress.
 * **Party Mode:** A rare powerup turns your bullets rainbow, pulses your ship, washes the screen in color, and grants a temporary rapid-fire bonus — pure chaos, on purpose.
+* **Pilot Profiles:** Separate save slots for separate pilots — scrap, upgrades, achievements, custom ships, and stats never mix between siblings sharing a computer. Switch, create, or delete profiles from the main menu; your original save becomes "Pilot 1" automatically.
+* **Dimensional Shading:** Every ship, enemy, asteroid, and satellite carries richer gradient shading, rim lighting, and specular highlights for a more three-dimensional look, and the ship selector shows at-a-glance Speed/Fire Rate bars for every ship.
+* **Settings:** A volume slider (separate from mute) and a one-click "Reset Progress" for a fresh start.
 
 ## 🕹️ Flight Manual
 **Desktop:**
@@ -31,6 +34,9 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 
 ## 🛠️ Local Development
 No build tools, package managers, or local servers are required. Simply clone the repository and open `index.html` in any modern web browser.
+
+## ✅ Testing
+An opt-in self-test harness ships alongside the game: open `index.html?test=1` in a browser to run ~62 automated checks (rendering, the full difficulty/level sweep, boss and achievement unlock paths, profile isolation, and more) and see a visual pass/fail report. It only loads with that query flag, so it has zero effect on normal play, and every destructive check runs under a disposable pilot profile that's deleted when the run finishes.
 
 ## ⚖️ Disclaimer & Copyright
 **Space Fandoms Collide** is a free, non-commercial fan tribute built for educational and portfolio purposes. 
