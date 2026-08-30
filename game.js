@@ -411,7 +411,7 @@ function triggerNuke() {
 }
 
 // --- INPUT ---
-canvas.addEventListener("mousemove", (e) => { let rect = canvas.getBoundingClientRect(); mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width); mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height); });
+canvas.addEventListener("mousemove", (e) => { usingMouse = true; let rect = canvas.getBoundingClientRect(); mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width); mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height); });
 canvas.addEventListener("mousedown", (e) => { if (e.button === 0) mouse.leftDown = true; if (e.button === 2) mouse.rightDown = true; initAudio(); });
 canvas.addEventListener("mouseup", (e) => { if (e.button === 0) mouse.leftDown = false; if (e.button === 2) mouse.rightDown = false; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
@@ -421,6 +421,10 @@ window.addEventListener("keyup", (e) => keys[e.code] = false);
 // --- TOUCH ---
 const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
 if (isTouchDevice) document.body.classList.add("touch-device");
+// Some laptops (2-in-1s, touch-enabled Windows machines) report touch support even when the
+// player is using a mouse. Track whichever input actually moves the aim, so the crosshair
+// doesn't stay hidden just because the hardware happens to support touch.
+let usingMouse = !isTouchDevice;
 const joystickZone = document.getElementById("joystickZone"); const joystickThumb = document.getElementById("joystickThumb");
 const fireBtn = document.getElementById("fireBtn"); const pauseBtn = document.getElementById("pauseBtn"); const bombBtn = document.getElementById("bombBtn");
 const muteBtn = document.getElementById("muteBtn");
@@ -435,13 +439,13 @@ function handleJoystickMove(clientX, clientY) {
 }
 function resetJoystick() { joystickTouchId = null; mouse.rightDown = false; if (joystickThumb) joystickThumb.style.transform = "translate(0px, 0px)"; }
 if (joystickZone) {
-    joystickZone.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); let t = e.changedTouches[0], rect = joystickZone.getBoundingClientRect(); joystickTouchId = t.identifier; joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; handleJoystickMove(t.clientX, t.clientY); }, { passive: false });
+    joystickZone.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); usingMouse = false; let t = e.changedTouches[0], rect = joystickZone.getBoundingClientRect(); joystickTouchId = t.identifier; joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; handleJoystickMove(t.clientX, t.clientY); }, { passive: false });
     joystickZone.addEventListener("touchmove", (e) => { e.preventDefault(); for (let t of e.changedTouches) if (t.identifier === joystickTouchId) handleJoystickMove(t.clientX, t.clientY); }, { passive: false });
     const endJoystickTouch = (e) => { for (let t of e.changedTouches) if (t.identifier === joystickTouchId) resetJoystick(); };
     joystickZone.addEventListener("touchend", endJoystickTouch); joystickZone.addEventListener("touchcancel", endJoystickTouch);
 }
 if (fireBtn) {
-    fireBtn.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); mouse.leftDown = true; fireBtn.classList.add("active"); }, { passive: false });
+    fireBtn.addEventListener("touchstart", (e) => { e.preventDefault(); initAudio(); usingMouse = false; mouse.leftDown = true; fireBtn.classList.add("active"); }, { passive: false });
     const endFireTouch = (e) => { e.preventDefault(); mouse.leftDown = false; fireBtn.classList.remove("active"); };
     fireBtn.addEventListener("touchend", endFireTouch, { passive: false }); fireBtn.addEventListener("touchcancel", endFireTouch, { passive: false });
 }
@@ -2010,7 +2014,7 @@ function render3D() {
     
     if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
 
-    if (!isTouchDevice) {
+    if (usingMouse) {
         ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
         ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
@@ -2113,7 +2117,7 @@ function render() {
 
     if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
     
-    if (gameState === "PLAYING" && !isTouchDevice) {
+    if (gameState === "PLAYING" && usingMouse) {
         ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
         ctx.strokeStyle = overheated ? "#f00" : (heat > 75 ? "#f50" : "#0f0"); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.moveTo(-15, 0); ctx.lineTo(-5, 0); ctx.moveTo(15, 0); ctx.lineTo(5, 0); ctx.moveTo(0, -15); ctx.lineTo(0, -5); ctx.moveTo(0, 15); ctx.lineTo(0, 5); ctx.stroke();
