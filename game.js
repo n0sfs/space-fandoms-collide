@@ -57,6 +57,118 @@ const pilotRecordOverlay = document.getElementById("pilotRecordOverlay");
 const pilotRecordListEl = document.getElementById("pilotRecordList");
 const trailPickerEl = document.getElementById("trailPicker");
 
+const profileSwitchBtn = document.getElementById("profileSwitchBtn");
+const activeProfileLabel = document.getElementById("activeProfileLabel");
+const profilesOverlay = document.getElementById("profilesOverlay");
+const profilesListEl = document.getElementById("profilesList");
+const newProfileName = document.getElementById("newProfileName");
+const newProfileBtn = document.getElementById("newProfileBtn");
+const profilesBackBtn = document.getElementById("profilesBackBtn");
+const resetProgressBtn = document.getElementById("resetProgressBtn");
+const volumeSlider = document.getElementById("volumeSlider");
+
+// --- PILOT PROFILES ---
+// Each profile's save data lives under keys suffixed with its id, except the original
+// "default" profile, which keeps the original unsuffixed keys so existing players don't
+// lose progress now that this feature exists.
+let profiles = [{ id: "default", name: "PILOT 1" }];
+let activeProfileId = "default";
+function pKey(base) { return activeProfileId === "default" ? base : `${base}_${activeProfileId}`; }
+
+function loadProfileList() {
+    try {
+        let stored = localStorage.getItem("sfc_profiles");
+        if (stored) profiles = JSON.parse(stored);
+        let storedActive = localStorage.getItem("sfc_activeProfile");
+        if (storedActive && profiles.some(p => p.id === storedActive)) activeProfileId = storedActive;
+    } catch(e) {}
+    if (!profiles || profiles.length === 0) profiles = [{ id: "default", name: "PILOT 1" }];
+}
+function saveProfileList() {
+    try { localStorage.setItem("sfc_profiles", JSON.stringify(profiles)); localStorage.setItem("sfc_activeProfile", activeProfileId); } catch(e) {}
+}
+
+// Wipes in-memory save state back to defaults before a different profile's data loads in,
+// so nothing from the previous pilot leaks into the next one.
+function resetRuntimeSaveState() {
+    highScores = [];
+    totalScrap = 0;
+    upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
+    lastShipId = null;
+    shipBuilderUnlocked = false;
+    lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0 };
+    unlockedAch = {};
+    equippedTrail = "classic";
+    customShipConfig = null;
+    delete ShipDesigns.custom;
+    let idx = ShipMenuOrder.findIndex(s => s.id === "custom");
+    if (idx !== -1) ShipMenuOrder.splice(idx, 1);
+    selectedShipType = "xwing";
+    if (typeof rebuildShipDropdown === "function") rebuildShipDropdown();
+    if (typeof setMenuShip === "function") setMenuShip("xwing");
+}
+
+function switchProfile(id) {
+    if (!profiles.some(p => p.id === id) || id === activeProfileId) { renderProfilesList(); return; }
+    activeProfileId = id;
+    saveProfileList();
+    resetRuntimeSaveState();
+    loadSaveData();
+    renderProfilesList();
+}
+
+function createProfile(name) {
+    name = (name || "").trim().toUpperCase().replace(/[^A-Z0-9 ]/g, "").slice(0, 14) || `PILOT ${profiles.length + 1}`;
+    let id = "p" + Date.now();
+    profiles.push({ id, name });
+    switchProfile(id);
+}
+
+function deleteProfile(id) {
+    if (profiles.length <= 1 || id === activeProfileId) return;
+    profiles = profiles.filter(p => p.id !== id);
+    ["sfc_scores", "sfc_scrap", "sfc_upgrades", "sfc_lastShip", "sfc_shipBuilderUnlocked", "sfc_customShip", "sfc_lifetime", "sfc_achievements", "sfc_trailColor", "sfc_seenHint"]
+        .forEach(base => { try { localStorage.removeItem(id === "default" ? base : `${base}_${id}`); } catch(e) {} });
+    saveProfileList();
+    renderProfilesList();
+}
+
+function renderProfilesList() {
+    if (activeProfileLabel) activeProfileLabel.textContent = (profiles.find(p => p.id === activeProfileId) || profiles[0]).name;
+    if (!profilesListEl) return;
+    profilesListEl.innerHTML = profiles.map(p => {
+        let isActive = p.id === activeProfileId;
+        return `<div class="profile-row ${isActive ? 'active' : ''}">
+            <span class="profile-name">${p.name}${isActive ? ' (ACTIVE)' : ''}</span>
+            <span class="profile-actions">
+                ${isActive ? '' : `<button type="button" class="profile-switch-action" data-id="${p.id}">SWITCH</button>`}
+                ${!isActive && profiles.length > 1 ? `<button type="button" class="profile-delete-action" data-id="${p.id}">✕</button>` : ''}
+            </span>
+        </div>`;
+    }).join('');
+    profilesListEl.querySelectorAll('.profile-switch-action').forEach(btn => {
+        const act = (e) => { if(e) e.preventDefault(); initAudio(); switchProfile(btn.getAttribute('data-id')); };
+        btn.addEventListener('click', act); btn.addEventListener('touchstart', act, { passive: false });
+    });
+    profilesListEl.querySelectorAll('.profile-delete-action').forEach(btn => {
+        const act = (e) => { if(e) e.preventDefault(); initAudio(); if (confirm('Delete this pilot and all their progress? This cannot be undone.')) deleteProfile(btn.getAttribute('data-id')); };
+        btn.addEventListener('click', act); btn.addEventListener('touchstart', act, { passive: false });
+    });
+}
+
+function resetActiveProfileProgress() {
+    resetRuntimeSaveState();
+    saveGameData();
+    try {
+        localStorage.removeItem(pKey("sfc_lastShip"));
+        localStorage.removeItem(pKey("sfc_shipBuilderUnlocked"));
+        localStorage.removeItem(pKey("sfc_customShip"));
+        localStorage.removeItem(pKey("sfc_trailColor"));
+        localStorage.removeItem(pKey("sfc_seenHint"));
+    } catch(e) {}
+    loadSaveData();
+}
+
 // Persistent Data
 let totalScrap = 0;
 let upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
@@ -150,7 +262,7 @@ function equipTrail(id) {
     let tc = TRAIL_COLORS.find(t => t.id === id);
     if (!tc || (tc.requires && !unlockedAch[tc.requires])) return;
     equippedTrail = id;
-    try { localStorage.setItem("sfc_trailColor", id); } catch(e) {}
+    try { localStorage.setItem(pKey("sfc_trailColor"), id); } catch(e) {}
     renderTrailPicker();
 }
 
@@ -193,9 +305,9 @@ function drawAchievementToasts() {
 
 function loadSaveData() {
     try {
-        let storedScores = localStorage.getItem("sfc_scores"); if (storedScores) highScores = JSON.parse(storedScores);
-        let storedScrap = localStorage.getItem("sfc_scrap"); if (storedScrap) totalScrap = parseInt(storedScrap) || 0;
-        let storedUpg = localStorage.getItem("sfc_upgrades");
+        let storedScores = localStorage.getItem(pKey("sfc_scores")); if (storedScores) highScores = JSON.parse(storedScores);
+        let storedScrap = localStorage.getItem(pKey("sfc_scrap")); if (storedScrap) totalScrap = parseInt(storedScrap) || 0;
+        let storedUpg = localStorage.getItem(pKey("sfc_upgrades"));
         if (storedUpg) {
             let parsed = JSON.parse(storedUpg);
             upgrades.bombs = parsed.bombs || 0;
@@ -204,28 +316,31 @@ function loadSaveData() {
             upgrades.power = parsed.power || 0;
         }
         let storedMuted = localStorage.getItem("sfc_muted"); if (storedMuted !== null) muted = (storedMuted === "1");
-        lastShipId = localStorage.getItem("sfc_lastShip");
-        if (typeof shipBuilderUnlocked !== "undefined") shipBuilderUnlocked = localStorage.getItem("sfc_shipBuilderUnlocked") === "1";
-        let storedCustomShip = localStorage.getItem("sfc_customShip");
+        let storedVolume = localStorage.getItem("sfc_volume"); if (storedVolume !== null) masterVolume = parseFloat(storedVolume) || 0;
+        lastShipId = localStorage.getItem(pKey("sfc_lastShip"));
+        if (typeof shipBuilderUnlocked !== "undefined") shipBuilderUnlocked = localStorage.getItem(pKey("sfc_shipBuilderUnlocked")) === "1";
+        let storedCustomShip = localStorage.getItem(pKey("sfc_customShip"));
         if (storedCustomShip && typeof registerCustomShip === "function") registerCustomShip(JSON.parse(storedCustomShip));
-        let storedLifetime = localStorage.getItem("sfc_lifetime");
+        let storedLifetime = localStorage.getItem(pKey("sfc_lifetime"));
         if (storedLifetime) {
             let p = JSON.parse(storedLifetime);
             lifetimeStats.kills = p.kills || 0; lifetimeStats.bossKills = p.bossKills || 0; lifetimeStats.bombsUsed = p.bombsUsed || 0; lifetimeStats.scrapEarned = p.scrapEarned || 0;
             lifetimeStats.gamesPlayed = p.gamesPlayed || 0; lifetimeStats.highestLevel = p.highestLevel || 0; lifetimeStats.hyperspaceCleared = p.hyperspaceCleared || 0;
         }
-        let storedAch = localStorage.getItem("sfc_achievements"); if (storedAch) unlockedAch = JSON.parse(storedAch);
-        let storedTrail = localStorage.getItem("sfc_trailColor"); if (storedTrail && TRAIL_COLORS.some(t => t.id === storedTrail)) equippedTrail = storedTrail;
+        let storedAch = localStorage.getItem(pKey("sfc_achievements")); if (storedAch) unlockedAch = JSON.parse(storedAch);
+        let storedTrail = localStorage.getItem(pKey("sfc_trailColor")); if (storedTrail && TRAIL_COLORS.some(t => t.id === storedTrail)) equippedTrail = storedTrail;
     } catch(e) {
-        localStorage.removeItem("sfc_scores"); localStorage.removeItem("sfc_scrap"); localStorage.removeItem("sfc_upgrades");
+        localStorage.removeItem(pKey("sfc_scores")); localStorage.removeItem(pKey("sfc_scrap")); localStorage.removeItem(pKey("sfc_upgrades"));
     }
     if (!highScores || highScores.length === 0) {
         highScores = [{name: "VDR", score: 10000}, {name: "LUK", score: 8000}, {name: "HAN", score: 6000}, {name: "BBA", score: 4000}, {name: "RD2", score: 2000}];
     }
     updateMuteUI();
+    updateVolumeUI();
     updateMenuUI();
     renderAchievementsList();
     renderTrailPicker();
+    renderProfilesList();
     if (typeof updateBuilderUnlockUI === "function") updateBuilderUnlockUI();
     if (lastShipId && typeof setMenuShip === "function") setMenuShip(lastShipId);
     maybeShowFirstRunHint();
@@ -233,8 +348,8 @@ function loadSaveData() {
 
 function saveGameData() {
     try {
-        localStorage.setItem("sfc_scores", JSON.stringify(highScores)); localStorage.setItem("sfc_scrap", totalScrap); localStorage.setItem("sfc_upgrades", JSON.stringify(upgrades));
-        localStorage.setItem("sfc_lifetime", JSON.stringify(lifetimeStats)); localStorage.setItem("sfc_achievements", JSON.stringify(unlockedAch));
+        localStorage.setItem(pKey("sfc_scores"), JSON.stringify(highScores)); localStorage.setItem(pKey("sfc_scrap"), totalScrap); localStorage.setItem(pKey("sfc_upgrades"), JSON.stringify(upgrades));
+        localStorage.setItem(pKey("sfc_lifetime"), JSON.stringify(lifetimeStats)); localStorage.setItem(pKey("sfc_achievements"), JSON.stringify(unlockedAch));
     } catch(e) {}
     updateMenuUI();
 }
@@ -291,11 +406,29 @@ for(let i=0; i<250; i++) stars3D.push({x: (Math.random()-0.5)*5000, y: (Math.ran
 // --- AUDIO ---
 let audioCtx;
 let muted = false;
-function initAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {} }
+let masterGain = null;
+let masterVolume = 1;
+function initAudio() {
+    try {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = masterVolume;
+            masterGain.connect(audioCtx.destination);
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch(e) {}
+}
+function setMasterVolume(v) {
+    masterVolume = Math.max(0, Math.min(1, v));
+    if (masterGain) masterGain.gain.value = masterVolume;
+    try { localStorage.setItem("sfc_volume", masterVolume); } catch(e) {}
+}
+function updateVolumeUI() { if (volumeSlider) volumeSlider.value = Math.round(masterVolume * 100); }
 function playSfx(type) {
     if (!audioCtx || muted) return;
     try {
-        let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime; osc.connect(gain); gain.connect(audioCtx.destination);
+        let osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), now = audioCtx.currentTime; osc.connect(gain); gain.connect(masterGain);
         if (type === 'shoot') { osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.1); gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); } 
         else if (type === 'enemyShoot') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(50, now + 0.15); gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15); osc.start(now); osc.stop(now + 0.15); }
         else if (type === 'boom') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(10, now + 0.3); gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3); osc.start(now); osc.stop(now + 0.3); } 
@@ -309,7 +442,7 @@ function playSfx(type) {
                 let o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = now + i * 0.09;
                 o.type = 'triangle'; o.frequency.setValueAtTime(freq, t0);
                 g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.12, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
-                o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.26);
+                o.connect(g); g.connect(masterGain); o.start(t0); o.stop(t0 + 0.26);
             });
         }
         else if (type === 'chaos') {
@@ -317,7 +450,7 @@ function playSfx(type) {
                 let o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = now + i * 0.05;
                 o.type = 'square'; o.frequency.setValueAtTime(freq, t0);
                 g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.08, t0 + 0.015); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15);
-                o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.16);
+                o.connect(g); g.connect(masterGain); o.start(t0); o.stop(t0 + 0.16);
             });
         }
     } catch (e) {}
@@ -337,7 +470,7 @@ function playMusicNote(freq, tense) {
         osc.type = tense ? 'sawtooth' : 'triangle'; osc.frequency.setValueAtTime(freq, now);
         let peak = tense ? 0.07 : 0.045, dur = tense ? 0.28 : 0.5;
         gain.gain.setValueAtTime(0.0, now); gain.gain.linearRampToValueAtTime(peak, now + 0.04); gain.gain.linearRampToValueAtTime(0.0, now + dur);
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.connect(gain); gain.connect(masterGain);
         osc.start(now); osc.stop(now + dur);
     } catch(e) {}
 }
@@ -389,6 +522,11 @@ function toggleMute() {
     updateMuteUI();
 }
 function updateMuteUI() { if (muteBtn) { muteBtn.textContent = muted ? "🔇" : "🔊"; muteBtn.classList.toggle("active", muted); } }
+
+if (volumeSlider) {
+    volumeSlider.addEventListener("input", () => { initAudio(); setMasterVolume(volumeSlider.value / 100); });
+    volumeSlider.addEventListener("touchstart", () => initAudio(), { passive: true });
+}
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
@@ -463,6 +601,9 @@ function popHalo(ctx, r, color, alpha = 0.55) {
     applyGlow(ctx, color, r * 1.1);
     ctx.globalAlpha = alpha; ctx.fillStyle = color;
     ctx.beginPath(); ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2); ctx.fill();
+    // small white-hot core inside the colored glow for more energy/depth
+    ctx.globalAlpha = alpha * 0.7; ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1.0; clearGlow(ctx);
 }
 function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, customY = null, customAng = null) {
@@ -477,13 +618,18 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ff3333");
-            let hullGrad = ctx.createLinearGradient(-r, -r, r, r); hullGrad.addColorStop(0, "#e8e8ff"); hullGrad.addColorStop(1, "#576879");
-            ctx.fillStyle = "#8a9ea8"; ctx.strokeStyle = "#222"; ctx.lineWidth = 1;
+            let hullGrad = ctx.createLinearGradient(-r, -r, r, r); hullGrad.addColorStop(0, "#f4f4ff"); hullGrad.addColorStop(0.45, "#c2ccd6"); hullGrad.addColorStop(1, "#4a5866");
+            let wingGrad = ctx.createLinearGradient(-r, -r*1.3, -r, 0); wingGrad.addColorStop(0, "#a8bac4"); wingGrad.addColorStop(1, "#5c6d78");
+            ctx.fillStyle = wingGrad; ctx.strokeStyle = "#222"; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(-r/2, 0); ctx.lineTo(-r, -r*1.3); ctx.lineTo(-r/4, -r*1.3); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r/2, 0); ctx.lineTo(-r, r*1.3); ctx.lineTo(-r/4, r*1.3); ctx.fill(); ctx.stroke();
             ctx.fillStyle = "#222"; ctx.fillRect(-r*1.1, -r*0.6, r*0.3, r*0.2); ctx.fillRect(-r*1.1, r*0.4, r*0.3, r*0.2);
             ctx.strokeStyle = "#ff4444"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-r/4, -r*1.3); ctx.lineTo(r*0.9, -r*1.3); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r/4, r*1.3); ctx.lineTo(r*0.9, r*1.3); ctx.stroke();
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r*1.4, 0); ctx.lineTo(r/2, -r/4); ctx.lineTo(-r, -r/4); ctx.lineTo(-r, r/4); ctx.lineTo(r/2, r/4); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#112233"; ctx.beginPath(); ctx.ellipse(r*0.2, 0, r*0.3, r*0.1, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = "#0055ff"; ctx.beginPath(); ctx.arc(-r*0.2, 0, r/6, 0, Math.PI*2); ctx.fill(); 
+            // thin rim-light catching the top edge of the fuselage, and a soft belly shadow
+            ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r*1.35, -r*0.03); ctx.lineTo(r/2, -r/4+1); ctx.lineTo(-r, -r/4+1); ctx.stroke();
+            ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(r*1.2, r*0.15); ctx.lineTo(-r, r/4); ctx.stroke();
+            ctx.fillStyle = "#112233"; ctx.beginPath(); ctx.ellipse(r*0.2, 0, r*0.3, r*0.1, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = "#0055ff"; ctx.beginPath(); ctx.arc(-r*0.2, 0, r/6, 0, Math.PI*2); ctx.fill();
+            applyGlow(ctx, "#fff", 3); ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.beginPath(); ctx.arc(-r*0.25, -r*0.04, r*0.05, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
             if (thrusting) { applyGlow(ctx, "#00aaff", 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r-2, -r/2, 4, 0, Math.PI*2); ctx.arc(-r-2, r/2, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
     },
@@ -491,10 +637,11 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); bullets.push(createBolt(Math.PI)); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ff3333");
-            let hullGrad = ctx.createRadialGradient(0, 0, r*0.1, 0, 0, r); hullGrad.addColorStop(0, "#f0f0f0"); hullGrad.addColorStop(1, "#666666");
+            let hullGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, r*0.1, 0, 0, r); hullGrad.addColorStop(0, "#ffffff"); hullGrad.addColorStop(0.6, "#b8bcc0"); hullGrad.addColorStop(1, "#4a4d50");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#222"; ctx.lineWidth = 1;
             ctx.fillRect(r*0.3, -r*0.4, r*0.9, r*0.25); ctx.strokeRect(r*0.3, -r*0.4, r*0.9, r*0.25); ctx.fillRect(r*0.3, r*0.15, r*0.9, r*0.25); ctx.strokeRect(r*0.3, r*0.15, r*0.9, r*0.25);
-            ctx.beginPath(); ctx.arc(-r/5, 0, r*0.9, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(-r/5, 0, r*0.5, 0, Math.PI*2); ctx.stroke(); 
+            ctx.beginPath(); ctx.arc(-r/5, 0, r*0.9, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(-r/5, 0, r*0.5, 0, Math.PI*2); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-r/5, 0, r*0.87, Math.PI*1.15, Math.PI*1.7); ctx.stroke();
             ctx.fillStyle = "#777"; ctx.beginPath(); ctx.moveTo(-r/5, r*0.7); ctx.lineTo(r*0.5, r*0.8); ctx.lineTo(r*0.5, r*0.6); ctx.fill(); ctx.stroke();
             ctx.beginPath(); ctx.arc(r*0.6, r*0.75, r*0.25, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(r*0.65, r*0.75, r*0.1, 0, Math.PI*2); ctx.fill(); 
             ctx.fillStyle = "#555"; ctx.beginPath(); ctx.arc(-r*0.4, -r*0.4, r*0.2, 0, Math.PI); ctx.fill(); ctx.stroke();
@@ -679,6 +826,21 @@ function setMenuShip(shipId) {
     if (shipSelectLabel) shipSelectLabel.textContent = entry.label;
 }
 
+function shipStatBars(shipId) {
+    let s = ShipDesigns[shipId] && ShipDesigns[shipId].stats;
+    if (!s) return "";
+    let all = Object.values(ShipDesigns).filter(d => d.stats).map(d => d.stats);
+    let minT = Math.min(...all.map(a => a.thrust)), maxT = Math.max(...all.map(a => a.thrust));
+    let minR = Math.min(...all.map(a => a.fireRate)), maxR = Math.max(...all.map(a => a.fireRate));
+    let spd = maxT > minT ? Math.round(1 + ((s.thrust - minT) / (maxT - minT)) * 4) : 3;
+    let rate = maxR > minR ? Math.round(1 + ((maxR - s.fireRate) / (maxR - minR)) * 4) : 3;
+    let dots = (n) => Array.from({length: 5}, (_, i) => `<span class="ship-stat-dot ${i < n ? 'filled' : ''}"></span>`).join('');
+    return `<span class="ship-stat-bars">
+        <span class="ship-stat-row"><span class="ship-stat-label spd">SPD</span><span class="ship-stat-dots">${dots(spd)}</span></span>
+        <span class="ship-stat-row"><span class="ship-stat-label rate">RATE</span><span class="ship-stat-dots">${dots(rate)}</span></span>
+    </span>`;
+}
+
 function rebuildShipDropdown() {
     if (!shipSelectList) return;
     shipSelectList.innerHTML = "";
@@ -686,8 +848,9 @@ function rebuildShipDropdown() {
         let opt = document.createElement("div");
         opt.className = "ship-option"; opt.setAttribute("data-ship", s.id);
         let img = document.createElement("img"); img.src = renderShipIcon(s.id); img.alt = "";
-        let span = document.createElement("span"); span.textContent = s.label;
-        opt.appendChild(img); opt.appendChild(span);
+        let span = document.createElement("span"); span.className = "ship-option-label"; span.textContent = s.label;
+        let bars = document.createElement("span"); bars.innerHTML = shipStatBars(s.id);
+        opt.appendChild(img); opt.appendChild(span); opt.appendChild(bars);
         const chooseAction = (e) => { if(e) e.preventDefault(); initAudio(); setMenuShip(s.id); shipSelectList.classList.add("hidden"); };
         opt.addEventListener("click", chooseAction); opt.addEventListener("touchstart", chooseAction, { passive: false });
         shipSelectList.appendChild(opt);
@@ -718,11 +881,11 @@ if (launchBtn) {
 setMenuShip(selectedShipType);
 
 function maybeShowFirstRunHint() {
-    try { if (localStorage.getItem("sfc_seenHint")) return; } catch(e) {}
+    try { if (localStorage.getItem(pKey("sfc_seenHint"))) return; } catch(e) {}
     const hint = document.getElementById("firstRunHint");
     if (!hint) return;
     hint.classList.remove("hidden");
-    const dismiss = () => { hint.classList.add("hidden"); try { localStorage.setItem("sfc_seenHint", "1"); } catch(e) {} };
+    const dismiss = () => { hint.classList.add("hidden"); try { localStorage.setItem(pKey("sfc_seenHint"), "1"); } catch(e) {} };
     const closeBtn = document.getElementById("firstRunHintClose");
     if (closeBtn) closeBtn.addEventListener("click", dismiss);
     if (launchBtn) launchBtn.addEventListener("click", dismiss, { once: true });
@@ -952,6 +1115,17 @@ if (moreToggleBtn) {
     };
     moreToggleBtn.addEventListener("click", toggleMoreAction); moreToggleBtn.addEventListener("touchstart", toggleMoreAction, { passive: false });
 }
+if (profileSwitchBtn) { const openProfAction = (e) => { if(e) e.preventDefault(); initAudio(); renderProfilesList(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(profilesOverlay) profilesOverlay.classList.remove("hidden"); }; profileSwitchBtn.addEventListener("click", openProfAction); profileSwitchBtn.addEventListener("touchstart", openProfAction, { passive: false }); }
+if (profilesBackBtn) { const closeProfAction = (e) => { if(e) e.preventDefault(); initAudio(); if(profilesOverlay) profilesOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; profilesBackBtn.addEventListener("click", closeProfAction); profilesBackBtn.addEventListener("touchstart", closeProfAction, { passive: false }); }
+if (newProfileBtn) { const addProfAction = (e) => { if(e) e.preventDefault(); initAudio(); createProfile(newProfileName ? newProfileName.value : ""); if(newProfileName) newProfileName.value = ""; }; newProfileBtn.addEventListener("click", addProfAction); newProfileBtn.addEventListener("touchstart", addProfAction, { passive: false }); }
+if (resetProgressBtn) {
+    const resetAction = (e) => {
+        if(e) e.preventDefault(); initAudio();
+        if (!confirm("Reset ALL progress for this pilot (scrap, upgrades, achievements, custom ship, stats)? This cannot be undone.")) return;
+        resetActiveProfileProgress();
+    };
+    resetProgressBtn.addEventListener("click", resetAction); resetProgressBtn.addEventListener("touchstart", resetAction, { passive: false });
+}
 if (shipBuilderBtn) { const openAction = (e) => { if(e) e.preventDefault(); initAudio(); openBuilder(); }; shipBuilderBtn.addEventListener("click", openAction); shipBuilderBtn.addEventListener("touchstart", openAction, { passive: false }); }
 if (achievementsBtn) { const openAchAction = (e) => { if(e) e.preventDefault(); initAudio(); renderAchievementsList(); if(menuOverlay) menuOverlay.classList.add("hidden"); if(achievementsOverlay) achievementsOverlay.classList.remove("hidden"); }; achievementsBtn.addEventListener("click", openAchAction); achievementsBtn.addEventListener("touchstart", openAchAction, { passive: false }); }
 if (achievementsBackBtn) { const closeAchAction = (e) => { if(e) e.preventDefault(); initAudio(); if(achievementsOverlay) achievementsOverlay.classList.add("hidden"); if(menuOverlay) menuOverlay.classList.remove("hidden"); }; achievementsBackBtn.addEventListener("click", closeAchAction); achievementsBackBtn.addEventListener("touchstart", closeAchAction, { passive: false }); }
@@ -962,7 +1136,7 @@ if (builderSaveBtn) {
     const saveAction = (e) => {
         if(e) e.preventDefault(); initAudio();
         let cfg = getBuilderConfig();
-        try { localStorage.setItem("sfc_customShip", JSON.stringify(cfg)); } catch(err) {}
+        try { localStorage.setItem(pKey("sfc_customShip"), JSON.stringify(cfg)); } catch(err) {}
         registerCustomShip(cfg);
         unlockAchievement('shipwright');
         setMenuShip("custom");
@@ -974,7 +1148,7 @@ if (builderDeleteBtn) {
     const deleteAction = (e) => {
         if(e) e.preventDefault(); initAudio();
         customShipConfig = null;
-        try { localStorage.removeItem("sfc_customShip"); } catch(err) {}
+        try { localStorage.removeItem(pKey("sfc_customShip")); } catch(err) {}
         delete ShipDesigns.custom;
         let idx = ShipMenuOrder.findIndex(s => s.id === "custom");
         if (idx !== -1) ShipMenuOrder.splice(idx, 1);
@@ -986,6 +1160,7 @@ if (builderDeleteBtn) {
 }
 
 // Boot Game Settings
+loadProfileList();
 loadSaveData();
 
 // --- TARGETS ---
@@ -1089,28 +1264,37 @@ const TargetDesigns = {
     tie_advanced: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#ff0000", 0.5);
-            let ballGrad = ctx.createRadialGradient(-r/8, -r/8, r/10, 0, 0, r/2); ballGrad.addColorStop(0, "#888"); ballGrad.addColorStop(1, "#222");
+            let ballGrad = ctx.createRadialGradient(-r/8, -r/8, r/10, 0, 0, r/2); ballGrad.addColorStop(0, "#aaa"); ballGrad.addColorStop(0.6, "#666"); ballGrad.addColorStop(1, "#1a1a1a");
+            let wingGrad = ctx.createLinearGradient(0, -r*1.2, 0, -r*0.5); wingGrad.addColorStop(0, "#333"); wingGrad.addColorStop(0.5, "#111"); wingGrad.addColorStop(1, "#050505");
             ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r/2); ctx.lineTo(0, -r*1.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, r/2); ctx.lineTo(0, r*1.2); ctx.stroke();
-            ctx.lineWidth = 6; ctx.strokeStyle = "#111"; ctx.beginPath(); ctx.moveTo(-r*0.5, -r*1.2); ctx.lineTo(r*0.8, -r*1.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r*0.5, r*1.2); ctx.lineTo(r*0.8, r*1.2); ctx.stroke();
-            ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(0, 0, r/2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#f00"; ctx.beginPath(); ctx.arc(0, 0, r/4, 0, Math.PI*2); ctx.fill(); 
+            ctx.lineWidth = 6; ctx.strokeStyle = wingGrad; ctx.beginPath(); ctx.moveTo(-r*0.5, -r*1.2); ctx.lineTo(r*0.8, -r*1.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r*0.5, r*1.2); ctx.lineTo(r*0.8, r*1.2); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*0.5, -r*1.2-3); ctx.lineTo(r*0.8, -r*1.2-3); ctx.stroke();
+            ctx.fillStyle = ballGrad; ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, r/2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#f00"; ctx.beginPath(); ctx.arc(0, 0, r/4, 0, Math.PI*2); ctx.fill();
         }
     },
     star_destroyer: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#33aaff", 0.5);
-            let sdGrad = ctx.createLinearGradient(r, 0, -r, 0); sdGrad.addColorStop(0, "#eceff1"); sdGrad.addColorStop(1, "#455a64");
+            let sdGrad = ctx.createLinearGradient(r, -r/1.5, -r, r/1.5); sdGrad.addColorStop(0, "#f5f7f8"); sdGrad.addColorStop(0.5, "#cfd8dc"); sdGrad.addColorStop(1, "#37474f");
             ctx.fillStyle = sdGrad; ctx.strokeStyle = "#263238"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r, -r/1.5); ctx.lineTo(-r, r/1.5); ctx.closePath(); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r, 0); ctx.stroke(); 
-            ctx.fillStyle = "#78909c"; ctx.fillRect(-r*0.8, -r/4, r*0.4, r/2); ctx.strokeRect(-r*0.8, -r/4, r*0.4, r/2); 
+            // AO seam where the dorsal and ventral hull halves meet
+            ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r, 0); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r*0.9, -r*0.08); ctx.lineTo(-r*0.9, -r*0.4); ctx.stroke();
+            ctx.fillStyle = "#78909c"; ctx.fillRect(-r*0.8, -r/4, r*0.4, r/2); ctx.strokeRect(-r*0.8, -r/4, r*0.4, r/2);
             applyGlow(ctx, "#00aaff", 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r, -r/3, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(-r, 0, 4, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(-r, r/3, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
         }
     },
     tie_interceptor: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#ff0000", 0.5);
+            let wingGrad = ctx.createLinearGradient(-r/2, -r*1.2, r*0.8, -r*0.6); wingGrad.addColorStop(0, "#2a2a2a"); wingGrad.addColorStop(1, "#050505");
+            let wingGrad2 = ctx.createLinearGradient(-r/2, r*1.2, r*0.8, r*0.6); wingGrad2.addColorStop(0, "#2a2a2a"); wingGrad2.addColorStop(1, "#050505");
+            let ballGrad = ctx.createRadialGradient(-r/8, -r/8, r/10, 0, 0, r/3); ballGrad.addColorStop(0, "#777"); ballGrad.addColorStop(1, "#1a1a1a");
             ctx.strokeStyle = "#444"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r/3); ctx.lineTo(0, -r*0.9); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, r/3); ctx.lineTo(0, r*0.9); ctx.stroke();
-            ctx.fillStyle = "#111"; ctx.beginPath(); ctx.moveTo(-r/2, -r*1.2); ctx.lineTo(r*0.8, -r*0.9); ctx.lineTo(-r/4, -r*0.6); ctx.fill(); ctx.beginPath(); ctx.moveTo(-r/2, r*1.2); ctx.lineTo(r*0.8, r*0.9); ctx.lineTo(-r/4, r*0.6); ctx.fill();
-            ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(0, 0, r/3, 0, Math.PI*2); ctx.fill(); 
+            ctx.fillStyle = wingGrad; ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(-r/2, -r*1.2); ctx.lineTo(r*0.8, -r*0.9); ctx.lineTo(-r/4, -r*0.6); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = wingGrad2; ctx.beginPath(); ctx.moveTo(-r/2, r*1.2); ctx.lineTo(r*0.8, r*0.9); ctx.lineTo(-r/4, r*0.6); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(0, 0, r/3, 0, Math.PI*2); ctx.fill();
         }
     },
     tie_fighter: { draw: (ctx, r) => { ShipDesigns.tiefighter.draw(ctx, r, false); } },
@@ -1128,6 +1312,11 @@ const TargetDesigns = {
             for(let i=r*0.8; i<r*1.8; i+=r*0.3) { ctx.moveTo(i, -r*0.3); ctx.lineTo(i, r*0.3); }
             ctx.moveTo(-r*1.8, 0); ctx.lineTo(-r*0.6, 0); ctx.moveTo(r*0.6, 0); ctx.lineTo(r*1.8, 0);
             ctx.stroke();
+            // glossy diagonal glint across each panel, like light catching photovoltaic glass
+            ctx.save(); ctx.beginPath(); ctx.rect(-r*1.8, -r*0.3, r*1.2, r*0.6); ctx.rect(r*0.6, -r*0.3, r*1.2, r*0.6); ctx.clip();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.35)"; ctx.lineWidth = r*0.12;
+            ctx.beginPath(); ctx.moveTo(-r*2.2, -r*0.5); ctx.lineTo(-r*1.4, r*0.5); ctx.moveTo(r*0.2, -r*0.5); ctx.lineTo(r*1.0, r*0.5); ctx.stroke();
+            ctx.restore();
             // bus body wrapped in gold MLI thermal foil, the classic satellite tell
             let bodyGrad = ctx.createLinearGradient(-r*0.5, -r*0.5, r*0.5, r*0.5);
             bodyGrad.addColorStop(0, "#ffe27a"); bodyGrad.addColorStop(0.5, "#c9971f"); bodyGrad.addColorStop(1, "#7a5c14");
@@ -1182,6 +1371,13 @@ const TargetDesigns = {
                     ctx.strokeStyle = "rgba(255, 255, 255, 0.18)"; ctx.lineWidth = Math.max(0.5, cr * 0.12); ctx.stroke();
                 });
             }
+
+            // A small mineral glint on the sunlit shoulder sells a rocky, faceted surface
+            // rather than a flat painted circle.
+            applyGlow(ctx, "rgba(255, 255, 255, 0.6)", 4);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+            ctx.beginPath(); ctx.arc(-r * 0.32, -r * 0.38, Math.max(1, r * 0.07), 0, Math.PI * 2); ctx.fill();
+            clearGlow(ctx);
             ctx.restore();
 
             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
@@ -1338,7 +1534,7 @@ function damagePlayer(amt) {
 function startGame(shipId) {
     let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA";
     currentPlayerName = nameVal; selectedShipType = (ShipDesigns[shipId]) ? shipId : "xwing";
-    try { localStorage.setItem("sfc_lastShip", selectedShipType); } catch(e) {}
+    try { localStorage.setItem(pKey("sfc_lastShip"), selectedShipType); } catch(e) {}
     requestWakeLock();
 
     if (menuOverlay) menuOverlay.classList.add("hidden");
@@ -1368,7 +1564,7 @@ function startLevel() {
 
     if (level === 20 && !shipBuilderUnlocked) {
         shipBuilderUnlocked = true;
-        try { localStorage.setItem("sfc_shipBuilderUnlocked", "1"); } catch(e) {}
+        try { localStorage.setItem(pKey("sfc_shipBuilderUnlocked"), "1"); } catch(e) {}
         updateBuilderUnlockUI();
         spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
         unlockAchievement('level_20');
