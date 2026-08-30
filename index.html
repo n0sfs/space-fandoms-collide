@@ -199,6 +199,7 @@
             background: none; border: 1px dashed #444; color: #777; cursor: pointer; border-radius: 4px; transition: 0.2s;
         }
         .more-toggle-btn:hover { border-color: #888; color: #ccc; }
+        .more-toggle-hint { margin: -10px 0 15px; font-size: 10px; color: #555; text-align: center; }
 
         /* Trail Picker */
         .trail-picker-wrap { margin-bottom: 15px; text-align: left; }
@@ -293,7 +294,7 @@
 <body>
 
     <div id="firstRunHint" class="hidden">
-        👆 New pilot? Check the Flight Manual above for controls.
+        👆 New pilot? Check the Flight Manual above for controls. Multiple kids playing? Tap 👤 PILOT on the menu for separate save profiles.
         <span id="firstRunHintClose">&times;</span>
     </div>
 
@@ -372,6 +373,7 @@
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
 
                     <button type="button" class="more-toggle-btn" id="moreToggleBtn">▾ MORE OPTIONS</button>
+                    <div class="more-toggle-hint">🏆 Achievements · 📊 Pilot Record · 🛠️ Ship Builder · 🎨 Engine Trails · 🔊 Volume</div>
                     <div id="menuExtras" class="hidden">
                         <div class="volume-row">
                             <label for="volumeSlider">VOLUME</label>
@@ -478,5 +480,12 @@
     </div>
 
     <script src="game.js"></script>
+    <script>
+        // Opt-in self-test harness: open index.html?test=1 to run it. Never loads otherwise,
+        // so it has zero effect on normal play. See test-runner.js for what it checks.
+        if (location.search.includes("test=1")) {
+            let s = document.createElement("script"); s.src = "test-runner.js"; document.body.appendChild(s);
+        }
+    </script>
 </body>
 </html>
