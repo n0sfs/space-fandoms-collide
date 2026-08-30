@@ -108,12 +108,20 @@ function resetRuntimeSaveState() {
     if (typeof setMenuShip === "function") setMenuShip("xwing");
 }
 
+// A reasonable 3-letter arcade-tag guess from a profile name, so a new/switched-to
+// pilot doesn't inherit the previous pilot's leftover initials in the input box.
+function initialsFromName(name) {
+    let letters = (name || "").toUpperCase().replace(/[^A-Z]/g, "");
+    return letters.slice(0, 3) || "AAA";
+}
+
 function switchProfile(id) {
     if (!profiles.some(p => p.id === id) || id === activeProfileId) { renderProfilesList(); return; }
     activeProfileId = id;
     saveProfileList();
     resetRuntimeSaveState();
     loadSaveData();
+    if (playerNameInput) playerNameInput.value = initialsFromName((profiles.find(p => p.id === id) || {}).name);
     renderProfilesList();
 }
 
@@ -652,12 +660,14 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(-0.1)); bullets.push(createBolt(0.1)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#33ff33");
-            let ballGrad = ctx.createRadialGradient(-r/8, -r/8, r/10, 0, 0, r/2); ballGrad.addColorStop(0, "#aaa"); ballGrad.addColorStop(1, "#111");
+            let ballGrad = ctx.createRadialGradient(-r/8, -r/8, r/10, 0, 0, r/2); ballGrad.addColorStop(0, "#ccc"); ballGrad.addColorStop(0.6, "#777"); ballGrad.addColorStop(1, "#0a0a0a");
             ctx.strokeStyle = "#333"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -r/2); ctx.lineTo(0, -r*1.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, r/2); ctx.lineTo(0, r*1.2); ctx.stroke();
-            let panGrad = ctx.createLinearGradient(0, -r*1.2, 0, r*1.2); panGrad.addColorStop(0,"#050505"); panGrad.addColorStop(0.5,"#444"); panGrad.addColorStop(1,"#050505");
+            let panGrad = ctx.createLinearGradient(0, -r*1.2, 0, r*1.2); panGrad.addColorStop(0,"#050505"); panGrad.addColorStop(0.5,"#555"); panGrad.addColorStop(1,"#050505");
             ctx.lineWidth = 6; ctx.strokeStyle = panGrad; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*1.2); ctx.lineTo(r*0.8, -r*1.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r*0.8, r*1.2); ctx.lineTo(r*0.8, r*1.2); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*1.2-3); ctx.lineTo(r*0.8, -r*1.2-3); ctx.stroke();
             ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(0, 0, r/2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(0, 0, r/4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
             ctx.strokeStyle = "#555"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r/4, 0); ctx.lineTo(r/4, 0); ctx.moveTo(0, -r/4); ctx.lineTo(0, r/4); ctx.stroke();
+            applyGlow(ctx, "#fff", 3); ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.beginPath(); ctx.arc(-r*0.15, -r*0.15, r*0.06, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
             if (thrusting) { applyGlow(ctx, "#ff2222", 15); ctx.fillStyle = "#ffaaaa"; ctx.beginPath(); ctx.arc(-r/2, 0, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
     },
@@ -665,11 +675,15 @@ const ShipDesigns = {
         fire: () => { let b = createBolt(0, 15); b.r = 6; bullets.push(b); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#33ccff");
-            let hullGrad = ctx.createRadialGradient(r*0.5, -r*0.2, 0, r*0.5, 0, r*0.8); hullGrad.addColorStop(0, "#ffffff"); hullGrad.addColorStop(1, "#8090a0");
-            ctx.fillStyle = "#a0b0c0"; ctx.strokeStyle = "#445566"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-r*0.3, 0, r*0.7, r*0.25, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            let hullGrad = ctx.createRadialGradient(r*0.5, -r*0.2, 0, r*0.5, 0, r*0.8); hullGrad.addColorStop(0, "#ffffff"); hullGrad.addColorStop(0.7, "#c0ccd6"); hullGrad.addColorStop(1, "#6a7a8a");
+            let neckGrad = ctx.createLinearGradient(0, -r*0.25, 0, r*0.25); neckGrad.addColorStop(0, "#c8d2dc"); neckGrad.addColorStop(1, "#6a7684");
+            let nacelleGrad = ctx.createLinearGradient(0, -r, 0, -r*0.7); nacelleGrad.addColorStop(0, "#98a4ae"); nacelleGrad.addColorStop(1, "#4a545c");
+            let nacelleGrad2 = ctx.createLinearGradient(0, r*0.7, 0, r); nacelleGrad2.addColorStop(0, "#4a545c"); nacelleGrad2.addColorStop(1, "#98a4ae");
+            ctx.fillStyle = neckGrad; ctx.strokeStyle = "#445566"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-r*0.3, 0, r*0.7, r*0.25, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
             ctx.fillStyle = "#ffcc00"; ctx.beginPath(); ctx.ellipse(-r*0.9, 0, r*0.1, r*0.2, 0, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#708090"; ctx.fillRect(-r*1.1, -r, r*1.4, r*0.3); ctx.strokeRect(-r*1.1, -r, r*1.4, r*0.3); ctx.fillRect(-r*1.1, r*0.7, r*1.4, r*0.3); ctx.strokeRect(-r*1.1, r*0.7, r*1.4, r*0.3);
-            ctx.fillStyle = hullGrad; ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.8, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.4, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.2, 0, Math.PI*2); ctx.stroke(); 
+            ctx.fillStyle = nacelleGrad; ctx.fillRect(-r*1.1, -r, r*1.4, r*0.3); ctx.strokeRect(-r*1.1, -r, r*1.4, r*0.3); ctx.fillStyle = nacelleGrad2; ctx.fillRect(-r*1.1, r*0.7, r*1.4, r*0.3); ctx.strokeRect(-r*1.1, r*0.7, r*1.4, r*0.3);
+            ctx.fillStyle = hullGrad; ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.8, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.4, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.2, 0, Math.PI*2); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.79, Math.PI*1.2, Math.PI*1.7); ctx.stroke();
             if (thrusting) { applyGlow(ctx, "#00d4ff", 20); ctx.fillStyle = "#e0f7fa"; ctx.fillRect(-r*0.9, -r*0.95, r*0.8, r*0.2); ctx.fillRect(-r*0.9, r*0.75, r*0.8, r*0.2); applyGlow(ctx, "#ff5500", 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*0.3, 0, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
     },
@@ -677,10 +691,12 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ffaa00");
-            let bodyGrad = ctx.createLinearGradient(-r, -r*0.4, r, r*0.4); bodyGrad.addColorStop(0, "#ccc"); bodyGrad.addColorStop(0.5, "#fff"); bodyGrad.addColorStop(1, "#777");
+            let bodyGrad = ctx.createLinearGradient(-r, -r*0.4, r, r*0.4); bodyGrad.addColorStop(0, "#ddd"); bodyGrad.addColorStop(0.5, "#fff"); bodyGrad.addColorStop(1, "#666");
+            let noseGrad = ctx.createLinearGradient(r*0.2, -r*0.4, r*0.2, r*0.4); noseGrad.addColorStop(0, "#eee"); noseGrad.addColorStop(0.5, "#ccc"); noseGrad.addColorStop(1, "#777");
             ctx.fillStyle = bodyGrad; ctx.strokeStyle = "#333"; ctx.lineWidth = 1; ctx.fillRect(-r*1.2, -r*0.4, r*1.4, r*0.8); ctx.strokeRect(-r*1.2, -r*0.4, r*1.4, r*0.8);
+            ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*1.2, -r*0.38); ctx.lineTo(r*0.2, -r*0.38); ctx.stroke();
             ctx.fillStyle = "#d32f2f"; ctx.fillRect(-r*0.4, -r*0.4, r*0.1, r*0.8); ctx.fillStyle = "#1976d2"; ctx.fillRect(r*0.2, -r*0.4, r*0.05, r*0.8);
-            ctx.fillStyle = "#bbb"; ctx.beginPath(); ctx.moveTo(r*0.2, -r*0.4); ctx.lineTo(r*1.2, 0); ctx.lineTo(r*0.2, r*0.4); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = noseGrad; ctx.strokeStyle = "#333"; ctx.beginPath(); ctx.moveTo(r*0.2, -r*0.4); ctx.lineTo(r*1.2, 0); ctx.lineTo(r*0.2, r*0.4); ctx.fill(); ctx.stroke();
             if (thrusting) { applyGlow(ctx, "#ff7700", 25); ctx.fillStyle = "#ffbb00"; ctx.beginPath(); ctx.moveTo(-r*1.2, -r*0.4); ctx.lineTo(-r*3.5, 0); ctx.lineTo(-r*1.2, r*0.4); ctx.fill(); clearGlow(ctx); }
         }
     },
@@ -688,10 +704,12 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ffaa00");
-            let hullGrad = ctx.createLinearGradient(0, -r, 0, r); hullGrad.addColorStop(0, "#a5c2b8"); hullGrad.addColorStop(1, "#5e756c");
+            let hullGrad = ctx.createLinearGradient(0, -r, 0, r); hullGrad.addColorStop(0, "#bfdcd0"); hullGrad.addColorStop(0.5, "#8ba89c"); hullGrad.addColorStop(1, "#4a5f58");
+            let finGrad = ctx.createLinearGradient(-r*0.1, 0, r*0.25, 0); finGrad.addColorStop(0, "#5c7268"); finGrad.addColorStop(1, "#2c362f");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#222"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-r*0.2, 0, r*0.6, r*0.25, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.fillRect(r*0.4, -r*0.1, r*0.5, r*0.2); ctx.strokeRect(r*0.4, -r*0.1, r*0.5, r*0.2); ctx.beginPath(); ctx.arc(r*0.9, 0, r*0.18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#ffcc66"; ctx.fillRect(r*0.85, -r*0.05, r*0.1, r*0.1); ctx.fillStyle = "#445544"; ctx.fillRect(-r*0.1, -r*0.6, r*0.35, r*0.4); ctx.fillRect(-r*0.1, r*0.2, r*0.35, r*0.4);
+            ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(-r*0.2, 0, r*0.58, Math.PI*1.15, Math.PI*1.7); ctx.stroke();
+            ctx.fillStyle = hullGrad; ctx.fillRect(r*0.4, -r*0.1, r*0.5, r*0.2); ctx.strokeRect(r*0.4, -r*0.1, r*0.5, r*0.2); ctx.beginPath(); ctx.arc(r*0.9, 0, r*0.18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "#ffcc66"; ctx.fillRect(r*0.85, -r*0.05, r*0.1, r*0.1); ctx.fillStyle = finGrad; ctx.fillRect(-r*0.1, -r*0.6, r*0.35, r*0.4); ctx.fillRect(-r*0.1, r*0.2, r*0.35, r*0.4);
             if (thrusting) { applyGlow(ctx, "#ffaa00", 25); ctx.fillStyle = "#ffffaa"; ctx.beginPath(); ctx.arc(-r*1.1, 0, r*0.2, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
     },
@@ -699,9 +717,13 @@ const ShipDesigns = {
         fire: () => { for(let i=0; i<Math.PI*2; i+=Math.PI*2/5) bullets.push(createBolt(i, 8)); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#00ff00");
-            let cubeGrad = ctx.createRadialGradient(-r*0.2, -r*0.2, 0, 0, 0, r); cubeGrad.addColorStop(0, "#333"); cubeGrad.addColorStop(1, "#050505");
+            let cubeGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.2); cubeGrad.addColorStop(0, "#484848"); cubeGrad.addColorStop(0.6, "#222"); cubeGrad.addColorStop(1, "#020202");
             ctx.fillStyle = cubeGrad; ctx.strokeStyle = "#005500"; ctx.lineWidth = 1; ctx.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); ctx.strokeRect(-r*0.8, -r*0.8, r*1.6, r*1.6);
             ctx.beginPath(); for(let i=-r*0.8; i<=r*0.8; i+=r*0.32) { ctx.moveTo(i, -r*0.8); ctx.lineTo(i, r*0.8); ctx.moveTo(-r*0.8, i); ctx.lineTo(r*0.8, i); } ctx.stroke();
+            // bevel: a lit top-left edge and a dark bottom-right AO corner sell the block as a solid cube
+            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-r*0.8, r*0.8); ctx.lineTo(-r*0.8, -r*0.8); ctx.lineTo(r*0.8, -r*0.8); ctx.stroke();
+            let aoGrad = ctx.createRadialGradient(r*0.7, r*0.7, 0, r*0.7, r*0.7, r*0.9); aoGrad.addColorStop(0, "rgba(0,0,0,0.5)"); aoGrad.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = aoGrad; ctx.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6);
             applyGlow(ctx, "#00ff00", 10); ctx.fillStyle = "#00ff00"; ctx.fillRect(-r*0.4, -r*0.4, 2, 2); ctx.fillRect(r*0.2, r*0.5, 2, 2); ctx.fillRect(r*0.6, -r*0.2, 2, 2); clearGlow(ctx);
             if (thrusting) { applyGlow(ctx, "#00ff00", 15); ctx.fillStyle = "#aaffaa"; ctx.fillRect(-r*0.8, -r*0.8, 4, r*1.6); clearGlow(ctx); }
         }
@@ -710,11 +732,13 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); bullets.push(createBolt(-0.15)); bullets.push(createBolt(0.15)); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#00aaff");
-            let camoGrad = ctx.createLinearGradient(-r, -r, r, r); camoGrad.addColorStop(0, "#4a5225"); camoGrad.addColorStop(1, "#2b3012");
+            let camoGrad = ctx.createLinearGradient(-r, -r, r, r); camoGrad.addColorStop(0, "#616b30"); camoGrad.addColorStop(0.5, "#4a5225"); camoGrad.addColorStop(1, "#20240e");
+            let domeGrad = ctx.createRadialGradient(r*0.75, -r*0.05, 0, r*0.8, 0, r*0.18); domeGrad.addColorStop(0, "#e0ffff"); domeGrad.addColorStop(1, "#5599aa");
             ctx.fillStyle = camoGrad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.fillRect(-r*0.8, -r*0.3, r*1.6, r*0.6); ctx.strokeRect(-r*0.8, -r*0.3, r*1.6, r*0.6);
-            ctx.beginPath(); ctx.moveTo(-r*0.4, -r*0.3); ctx.lineTo(-r*0.6, -r*0.9); ctx.lineTo(r*0.2, -r*0.9); ctx.lineTo(r*0.4, -r*0.3); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*0.28); ctx.lineTo(r*0.8, -r*0.28); ctx.stroke();
+            ctx.fillStyle = camoGrad; ctx.beginPath(); ctx.moveTo(-r*0.4, -r*0.3); ctx.lineTo(-r*0.6, -r*0.9); ctx.lineTo(r*0.2, -r*0.9); ctx.lineTo(r*0.4, -r*0.3); ctx.fill(); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(-r*0.4, r*0.3); ctx.lineTo(-r*0.6, r*0.9); ctx.lineTo(r*0.2, r*0.9); ctx.lineTo(r*0.4, r*0.3); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#aaeeff"; ctx.beginPath(); ctx.arc(r*0.8, 0, r*0.15, 0, Math.PI*2); ctx.fill(); 
+            ctx.fillStyle = domeGrad; ctx.beginPath(); ctx.arc(r*0.8, 0, r*0.15, 0, Math.PI*2); ctx.fill();
             if (thrusting) { applyGlow(ctx, "#00aaff", 15); ctx.fillStyle = "#fff"; ctx.fillRect(-r*0.9, -r*0.2, 5, r*0.4); ctx.fillRect(-r*0.7, -r*0.8, 5, r*0.3); ctx.fillRect(-r*0.7, r*0.5, 5, r*0.3); clearGlow(ctx); }
         }
     },
@@ -722,8 +746,9 @@ const ShipDesigns = {
         fire: () => { let b = createBolt(0, 8); b.r = 20; b.range = canvas.width*0.4; bullets.push(b); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#3399ff");
-            let boxGrad = ctx.createLinearGradient(-r, 0, r, 0); boxGrad.addColorStop(0, "#002244"); boxGrad.addColorStop(0.5, "#004488"); boxGrad.addColorStop(1, "#002244");
+            let boxGrad = ctx.createLinearGradient(-r, 0, r, 0); boxGrad.addColorStop(0, "#002244"); boxGrad.addColorStop(0.4, "#0066bb"); boxGrad.addColorStop(0.55, "#004488"); boxGrad.addColorStop(1, "#001830");
             ctx.fillStyle = boxGrad; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.fillRect(-r*0.7, -r*0.7, r*1.4, r*1.4); ctx.strokeRect(-r*0.7, -r*0.7, r*1.4, r*1.4); ctx.strokeRect(-r*0.5, -r*0.5, r*1.0, r*1.0);
+            ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*0.7, -r*0.68); ctx.lineTo(r*0.7, -r*0.68); ctx.stroke();
             ctx.fillStyle = "#dddddd"; ctx.fillRect(r*0.2, -r*0.5, r*0.3, r*0.3); ctx.fillRect(r*0.2, r*0.2, r*0.3, r*0.3); 
             applyGlow(ctx, "#ffffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(r*0.5, 0, r*0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); clearGlow(ctx); 
             if (thrusting) { applyGlow(ctx, "#0088ff", 25); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 3; ctx.strokeRect(-r*0.8, -r*0.8, r*1.6, r*1.6); clearGlow(ctx); }
@@ -733,9 +758,10 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ff2200");
-            let hullGrad = ctx.createLinearGradient(-r, 0, r, 0); hullGrad.addColorStop(0, "#d0d0d0"); hullGrad.addColorStop(1, "#ffffff");
-            ctx.fillStyle = hullGrad; ctx.strokeStyle = "#222"; ctx.lineWidth = 1; ctx.fillRect(-r*1.2, -r*0.45, r*0.4, r*0.25); ctx.fillRect(-r*1.2, r*0.2, r*0.4, r*0.25); ctx.fillRect(-r*1.2, -r*0.12, r*0.4, r*0.24); 
+            let hullGrad = ctx.createLinearGradient(-r, -r*0.3, r, r*0.3); hullGrad.addColorStop(0, "#e8e8e8"); hullGrad.addColorStop(0.5, "#ffffff"); hullGrad.addColorStop(1, "#9a9a9a");
+            ctx.fillStyle = hullGrad; ctx.strokeStyle = "#222"; ctx.lineWidth = 1; ctx.fillRect(-r*1.2, -r*0.45, r*0.4, r*0.25); ctx.fillRect(-r*1.2, r*0.2, r*0.4, r*0.25); ctx.fillRect(-r*1.2, -r*0.12, r*0.4, r*0.24);
             ctx.beginPath(); ctx.moveTo(-r*0.8, -r*0.3); ctx.lineTo(r*0.2, -r*0.2); ctx.lineTo(r*1.3, -r*0.05); ctx.lineTo(r*1.3, r*0.05); ctx.lineTo(r*0.2, r*0.2); ctx.lineTo(-r*0.8, r*0.3); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*0.29); ctx.lineTo(r*0.2, -r*0.19); ctx.lineTo(r*1.28, -r*0.05); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(-r*0.6, -r*0.3); ctx.lineTo(-r*0.8, -r*0.9); ctx.lineTo(-r*0.1, -r*0.2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-r*0.6, r*0.3); ctx.lineTo(-r*0.8, r*0.9); ctx.lineTo(-r*0.1, r*0.2); ctx.fill(); ctx.stroke();
             ctx.fillStyle = "#cc0000"; ctx.beginPath(); ctx.moveTo(r*0.2, -r*0.1); ctx.lineTo(r*0.9, -r*0.05); ctx.lineTo(r*0.9, 0); ctx.lineTo(r*0.2, 0); ctx.fill(); ctx.beginPath(); ctx.moveTo(r*0.2, r*0.1); ctx.lineTo(r*0.9, r*0.05); ctx.lineTo(r*0.9, 0); ctx.lineTo(r*0.2, 0); ctx.fill();
             ctx.fillStyle = "#050505"; ctx.beginPath(); ctx.ellipse(-r*0.1, 0, r*0.35, r*0.12, 0, 0, Math.PI*2); ctx.fill(); 
@@ -746,10 +772,12 @@ const ShipDesigns = {
         fire: () => { let b = createBolt(0, 11); b.isEmpBolt = true; b.r = 6; bullets.push(b); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#00ffff");
-            let hullGrad = ctx.createLinearGradient(-r, 0, r, 0); hullGrad.addColorStop(0, "#111519"); hullGrad.addColorStop(1, "#333b44");
+            let hullGrad = ctx.createLinearGradient(-r, -r*0.3, r, r*0.3); hullGrad.addColorStop(0, "#22282f"); hullGrad.addColorStop(0.5, "#454f5a"); hullGrad.addColorStop(1, "#14171b");
+            let portGrad = ctx.createRadialGradient(-r*0.06, -r*0.36, 0, 0, 0, r*0.3); portGrad.addColorStop(0, "#3a3a3a"); portGrad.addColorStop(1, "#000");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.fillRect(-r, -r*0.3, r*1.5, r*0.6); ctx.strokeRect(-r, -r*0.3, r*1.5, r*0.6);
+            ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-r, -r*0.29); ctx.lineTo(r*0.5, -r*0.29); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(r*0.5, -r*0.3); ctx.lineTo(r*1.2, -r*0.1); ctx.lineTo(r*1.2, r*0.1); ctx.lineTo(r*0.5, r*0.3); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(-r*0.5, -r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.2, -r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = portGrad; ctx.strokeStyle = "#111"; ctx.beginPath(); ctx.arc(-r*0.5, -r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.2, -r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
             ctx.beginPath(); ctx.arc(-r*0.5, r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(r*0.2, r*0.5, r*0.3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
             if (thrusting) { applyGlow(ctx, "#00aaff", 15); ctx.fillStyle = "#88ddff"; ctx.beginPath(); ctx.arc(-r*0.5, -r*0.5, r*0.15, 0, Math.PI*2); ctx.arc(r*0.2, -r*0.5, r*0.15, 0, Math.PI*2); ctx.arc(-r*0.5, r*0.5, r*0.15, 0, Math.PI*2); ctx.arc(r*0.2, r*0.5, r*0.15, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
@@ -757,9 +785,10 @@ const ShipDesigns = {
     lightship: { name: "LIGHTSHIP", laserColor: "#00ffff", stats: { thrust: 8, fric: 0.99, fireRate: 0.3, heat: 12 },
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
-            let hullGrad = ctx.createLinearGradient(-r, 0, r, 0); hullGrad.addColorStop(0, "#000"); hullGrad.addColorStop(1, "#111");
+            let hullGrad = ctx.createRadialGradient(r*0.2, 0, 0, 0, 0, r*1.3); hullGrad.addColorStop(0, "#0a2530"); hullGrad.addColorStop(0.6, "#041018"); hullGrad.addColorStop(1, "#000");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r, -r*0.8); ctx.lineTo(-r*0.5, 0); ctx.lineTo(-r, r*0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-r*0.8, 0); ctx.stroke();
+            ctx.strokeStyle = "rgba(0,255,255,0.35)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r*0.9, -r*0.06); ctx.lineTo(-r*0.6, -r*0.55); ctx.stroke();
             if (thrusting) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*0.6, 0, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); if (frames % 4 === 0) lightTrails.push({ x: ship.x, y: ship.y, life: 8.0, maxLife: 8.0 }); }
         }
     },
@@ -767,18 +796,21 @@ const ShipDesigns = {
         fire: () => { bullets.push(createBolt(-0.1)); bullets.push(createBolt(0.1)); bullets.push(createBolt(-0.25)); bullets.push(createBolt(0.25)); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ff9900");
-            let hullGrad = ctx.createLinearGradient(0, -r, 0, r); hullGrad.addColorStop(0, "#1976d2"); hullGrad.addColorStop(1, "#115293");
+            let hullGrad = ctx.createLinearGradient(-r*0.3, -r, r*0.1, r); hullGrad.addColorStop(0, "#4a9fee"); hullGrad.addColorStop(0.5, "#1976d2"); hullGrad.addColorStop(1, "#0a3866");
+            let noseGrad = ctx.createLinearGradient(-r*0.8, -r*0.2, r*1.2, r*0.2); noseGrad.addColorStop(0, "#cc5500"); noseGrad.addColorStop(0.5, "#ffaa33"); noseGrad.addColorStop(1, "#ff8800");
             ctx.fillStyle = hullGrad; ctx.strokeStyle = "#ffaa00"; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(-r*0.5, 0); ctx.lineTo(-r*0.2, -r*1.2); ctx.lineTo(r*0.2, -r*1.2); ctx.lineTo(r*0.5, 0); ctx.fill(); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(-r*0.5, 0); ctx.lineTo(-r*0.2, r*1.2); ctx.lineTo(r*0.2, r*1.2); ctx.lineTo(r*0.5, 0); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#ff8800"; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*0.2); ctx.lineTo(r*1.2, 0); ctx.lineTo(-r*0.8, r*0.2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#050505"; ctx.beginPath(); ctx.arc(r*0.2, 0, r*0.15, 0, Math.PI*2); ctx.fill(); 
+            ctx.fillStyle = noseGrad; ctx.beginPath(); ctx.moveTo(-r*0.8, -r*0.2); ctx.lineTo(r*1.2, 0); ctx.lineTo(-r*0.8, r*0.2); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#050505"; ctx.beginPath(); ctx.arc(r*0.2, 0, r*0.15, 0, Math.PI*2); ctx.fill();
             if (thrusting) { applyGlow(ctx, "#00aaff", 15); ctx.fillStyle = "#fff"; ctx.fillRect(-r*0.9, -r*0.1, 4, r*0.2); clearGlow(ctx); }
         }
     },
     fsociety: { name: "FSOCIETY", laserColor: "#00ff00", stats: { thrust: 6, fric: 0.97, fireRate: 0.18, heat: 9 },
         fire: () => { let b = createBolt(0, 13); b.isHack = true; b.r = 5; bullets.push(b); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
-            let gx = (Math.random()-0.5)*4; let gy = (Math.random()-0.5)*4; 
+            let gx = (Math.random()-0.5)*4; let gy = (Math.random()-0.5)*4;
+            let glitchGrad = ctx.createRadialGradient(-r*0.15, -r*0.15, 0, 0, 0, r*0.9); glitchGrad.addColorStop(0, "rgba(0,255,0,0.12)"); glitchGrad.addColorStop(1, "rgba(0,255,0,0)");
+            ctx.fillStyle = glitchGrad; ctx.fillRect(-r, -r, r*2, r*2);
             ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 1;
             ctx.strokeRect(-r/2 + gx, -r/2 + gy, r, r); ctx.strokeRect(-r/4 - gx, -r/4 - gy, r*1.5, r*0.5);
             ctx.beginPath(); ctx.moveTo(-r, -r + gx); ctx.lineTo(r, gy); ctx.lineTo(-r, r - gx); ctx.stroke();
