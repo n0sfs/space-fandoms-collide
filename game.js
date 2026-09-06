@@ -442,7 +442,7 @@ let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged 
 // Phase 2 of a boss fight: once a boss is wounded it breaks for an asteroid field and the fight
 // continues from the cockpit in 3D. Only bosses that are a single entity do this -- the Sentinel
 // and Hive swarms have no one thing to chase, so they stay a 2D fight start to finish.
-let bossPursuit = false, bossPursuitName = "";
+let bossPursuit = false, bossPursuitName = "", bossDeathTimer = 0;
 const BOSS_PURSUIT_THRESHOLD = 0.5;   // fraction of max HP at which it breaks and runs
 const BOSS_DISPLAY_NAMES = {
     boss_station: "SUPERLASER STATION", boss_mothership: "MOTHERSHIP",
@@ -452,6 +452,43 @@ const BOSS_DISPLAY_NAMES = {
 // it's damaged, so it should visibly be damaged. World-space (x/y/z), rendered with the same
 // perspective projection as everything else in targets3D rather than the 2D particle system.
 let bossEffects3D = [];
+
+// A hit lands as a small spark burst; the killing blow as a proper multi-stage explosion --
+// a bright fireball core, a slower secondary flare a beat behind it (the classic staggered
+// boss-death pop), an outward ring of embers, and a smoke cloud left hanging where it died.
+// World-space, merged into the same depth-sorted render pass as everything else in targets3D.
+function spawnBossImpact(x, y, z, lethal) {
+    let sparks = lethal ? 22 : 5;
+    for (let i = 0; i < sparks; i++) {
+        let ang = Math.random() * Math.PI * 2;
+        let spd = (lethal ? 140 : 70) + Math.random() * (lethal ? 220 : 70);
+        bossEffects3D.push({
+            x, y, z,
+            vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, vz: (Math.random() - 0.5) * spd * 0.5,
+            life: (lethal ? 0.7 : 0.3) + Math.random() * 0.35, maxLife: lethal ? 1.0 : 0.55,
+            size: (lethal ? 5 : 2.5) + Math.random() * (lethal ? 5 : 2.5), kind: "spark",
+        });
+    }
+    let flashes = lethal ? [[0, 70], [0.08, 55], [0.18, 90]] : [[0, 26]];
+    flashes.forEach(([delay, size]) => {
+        bossEffects3D.push({
+            x: x + (lethal ? (Math.random() - 0.5) * 60 : 0), y: y + (lethal ? (Math.random() - 0.5) * 60 : 0), z,
+            vx: 0, vy: 0, vz: 0,
+            life: 0.32 + delay, maxLife: 0.32 + delay, delay, size, kind: "flash",
+        });
+    });
+    if (lethal) {
+        for (let i = 0; i < 14; i++) {
+            let ang = Math.random() * Math.PI * 2, spd = 15 + Math.random() * 45;
+            bossEffects3D.push({
+                x, y, z,
+                vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 15, vz: 0,
+                life: 1.6 + Math.random() * 1.0, maxLife: 1.8,
+                size: 32 + Math.random() * 34, kind: "smoke",
+            });
+        }
+    }
+}
 let sentinelSpawnQueue = 0, sentinelSpawnTimer = 0, sentinelSpeedMod = 1;
 const FOV = 500;
 let camX = 0, camY = 0;
@@ -585,7 +622,7 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; is3DMode = false; targets3D = []; bossEffects3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; is3DMode = false; targets3D = []; bossEffects3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -1772,6 +1809,7 @@ function damagePlayer(amt) {
 // other than the every-7th-level survival round.
 function beginBossPursuit(boss) {
     bossPursuit = true;
+    bossDeathTimer = 0;
     bossPursuitName = BOSS_DISPLAY_NAMES[boss.type] || "HOSTILE";
     playSfx('glitch'); shake += 25; vibrate([40, 60, 40]);
 
@@ -1811,6 +1849,7 @@ function beginBossPursuit(boss) {
 
 function endBossPursuit(victory) {
     bossPursuit = false;
+    bossDeathTimer = 0;
     is3DMode = false;
     targets3D = []; bullets3D = []; enemyBullets3D = []; bossEffects3D = [];
     if (!victory) return;
@@ -1919,7 +1958,7 @@ function startGame(shipId, mode) {
     if (gameMode === "rush") diffScoreMult *= 1.3;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false;
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0;
     runKills = 0; runBestCombo = 1; runGrazes = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
@@ -2015,7 +2054,7 @@ function startLevel() {
     // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
     // Swarm cleared before its trickle finished bleeds its leftovers into the next level.
     sentinelSpawnQueue = 0;
-    bossPursuit = false;
+    bossPursuit = false; bossDeathTimer = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
@@ -2053,29 +2092,36 @@ function startLevel() {
     let restoreRandom = null;
     if (gameMode === "daily") { restoreRandom = Math.random; Math.random = mulberry32(dailySeed + level * 7919); }
 
-    if (gameMode === "rush") {
-        // Boss Rush: every boss back to back, no filler, no hyperspace. Difficulty keeps
-        // climbing with the wave number via the shared speedMod/diffMult curve.
-        spawnBossEncounter(BOSS_ROTATION[(level - 1) % BOSS_ROTATION.length], diffMult, speedMod);
-        spawnText(canvas.width/2, 80, "WAVE " + level, "#ffcc00", 24);
-    } else if (level % 5 === 0 && !is3DMode) {
-        spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
-    } else {
-        let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
-        for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
-        
-        let numShips = Math.floor(Math.floor(level / 3) * diffMult);
-        for (let i = 0; i < numShips; i++) {
-            let rand = Math.random();
-            if (rand < 0.3) spawnTarget("tie_fighter", 15, speedMod * 1.2); else if (rand < 0.6) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
-            else if (rand < 0.8) spawnTarget("tie_advanced", 18, speedMod * 0.9); else spawnTarget("star_destroyer", 50, speedMod);
+    // try/finally rather than a plain trailing restore: if any spawn call below throws, a bare
+    // restore never runs and Math.random stays permanently swapped to the seeded generator for
+    // the rest of the session -- every "random" draw anywhere in the game becomes deterministic
+    // from that point on, a state no test or playthrough would ever think to suspect.
+    try {
+        if (gameMode === "rush") {
+            // Boss Rush: every boss back to back, no filler, no hyperspace. Difficulty keeps
+            // climbing with the wave number via the shared speedMod/diffMult curve.
+            spawnBossEncounter(BOSS_ROTATION[(level - 1) % BOSS_ROTATION.length], diffMult, speedMod);
+            spawnText(canvas.width/2, 80, "WAVE " + level, "#ffcc00", 24);
+        } else if (level % 5 === 0 && !is3DMode) {
+            spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
+        } else {
+            let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
+            for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
+
+            let numShips = Math.floor(Math.floor(level / 3) * diffMult);
+            for (let i = 0; i < numShips; i++) {
+                let rand = Math.random();
+                if (rand < 0.3) spawnTarget("tie_fighter", 15, speedMod * 1.2); else if (rand < 0.6) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
+                else if (rand < 0.8) spawnTarget("tie_advanced", 18, speedMod * 0.9); else spawnTarget("star_destroyer", 50, speedMod);
+            }
+            if (level > 4) {
+                let numSentinels = Math.floor(Math.floor(level / 4) * diffMult); if (numSentinels < 1 && gameDifficulty !== 'easy') numSentinels = 1;
+                for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.2);
+            }
         }
-        if (level > 4) {
-            let numSentinels = Math.floor(Math.floor(level / 4) * diffMult); if (numSentinels < 1 && gameDifficulty !== 'easy') numSentinels = 1;
-            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.2);
-        }
+    } finally {
+        if (restoreRandom) Math.random = restoreRandom;
     }
-    if (restoreRandom) Math.random = restoreRandom;
     updateUI();
 }
 
@@ -2153,13 +2199,24 @@ function update3D(dt) {
     if (chaosTimer > 0) { chaosTimer -= dt; if (chaosTimer < 0) chaosTimer = 0; }
 
     if (bossPursuit) {
-        // No survival clock here -- the round ends when the boss does. Keep the field stocked so
-        // it stays an asteroid field rather than emptying out into a plain duel.
-        if (targets3D.filter(t => !t.isBoss).length < 22 && Math.random() < 0.05) spawnTarget3D();
-        if (!targets3D.some(t => t.isBoss)) {
-            // Boss destroyed (scored in the bullet-collision path below); wrap the level up.
-            endBossPursuit(true);
-            return;
+        if (bossDeathTimer > 0) {
+            // The kill already registered (scored, explosion spawned) below in the bullet loop
+            // last frame; hold here so the explosion actually gets to play before the level
+            // advances out from under it. Without this the victory check one line down fired
+            // the very next frame -- about 16ms after the boss died -- and wiped bossEffects3D
+            // before a human could ever see it.
+            bossDeathTimer -= dt;
+            if (bossDeathTimer <= 0) { endBossPursuit(true); return; }
+        } else {
+            // No survival clock here -- the round ends when the boss does. Keep the field
+            // stocked so it stays an asteroid field rather than emptying into a plain duel.
+            if (targets3D.filter(t => !t.isBoss).length < 22 && Math.random() < 0.05) spawnTarget3D();
+            if (!targets3D.some(t => t.isBoss)) {
+                // Safety net: the boss vanished without going through the death-timer path
+                // above (shouldn't happen via normal play, but don't strand the run if it does).
+                endBossPursuit(true);
+                return;
+            }
         }
     } else {
         levelTimer3D -= dt;
@@ -2242,10 +2299,13 @@ function update3D(dt) {
             if (Math.abs(b.z - t.z) < 150 && Math.hypot(b.x - t.x, b.y - t.y) < t.r + 20) {
                 let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0) + runBonusDamage;
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
+                if (t.isBoss) spawnBossImpact(b.x, b.y, b.z, false);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
                     if (t.isBoss) {
                         shake = 40; nukeFlash = 1.0;
+                        spawnBossImpact(t.x, t.y, t.z, true);
+                        bossDeathTimer = 1.3;   // let the explosion play before the level advances
                         score += diffScoreMult * 1500 * combo;
                         currentRunScrap += Math.round(10 * runScrapMult);
                         lifetimeStats.bossKills++;
@@ -2655,9 +2715,13 @@ function render3D() {
     });
     ctx.globalAlpha = 1.0;
 
-    // Damage effects are merged into the same depth sort as everything else so a smoke puff
-    // drifting in front of an asteroid actually occludes it, rather than always drawing on top.
-    let renderList = [...targets3D, ...bossEffects3D.map(e => ({ ...e, __isEffect: true, angle: 0 }))]
+    // Smoke and sparks are merged into the same depth sort as everything else, so a smoke puff
+    // drifting in front of an asteroid actually occludes it rather than always drawing on top.
+    // Explosion flashes are the one exception -- they're a light source, not a solid object, and
+    // an explosion visually smothered by the smoke cloud it just made (which is densest at the
+    // exact moment and position it dies) reads as broken, not atmospheric. They're drawn in their
+    // own pass after everything else instead.
+    let renderList = [...targets3D, ...bossEffects3D.filter(e => e.kind !== "flash").map(e => ({ ...e, __isEffect: true, angle: 0 }))]
         .sort((a,b) => b.z - a.z);
     // A fixed light source (upper-left, as if lit by a distant sun) used for the boss's rim
     // light and ambient-occlusion shadow below -- real light in space is hard and directional,
@@ -2691,7 +2755,15 @@ function render3D() {
             if (t.kind === "smoke") {
                 ctx.globalAlpha = a * 0.35; ctx.fillStyle = "#26262a";
                 ctx.beginPath(); ctx.arc(0, 0, t.size, 0, Math.PI*2); ctx.fill();
+            } else if (t.kind === "spark") {
+                // A radiating ember from a hit or the kill -- distinct from the slow ambient
+                // wound trail below, sized off the impact so the death burst reads much bigger.
+                ctx.globalAlpha = a; applyGlow(ctx, "#ff8833", 10);
+                ctx.fillStyle = "#ffcc88"; ctx.beginPath(); ctx.arc(0, 0, Math.max(1.5, t.size * 0.4), 0, Math.PI*2); ctx.fill();
+                clearGlow(ctx);
             } else {
+                // Ambient ember drifting off a wounded hull -- small and steady, not part of an
+                // impact burst.
                 ctx.globalAlpha = a; applyGlow(ctx, "#ff8833", 12);
                 ctx.fillStyle = "#ffcc88"; ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI*2); ctx.fill();
                 clearGlow(ctx);
@@ -2733,6 +2805,28 @@ function render3D() {
             else TargetDesigns.asteroid.draw(ctx, t.r, t);
         }
         ctx.restore();
+    });
+
+    // Explosion flashes render in their own pass, always on top of the depth-sorted scene above
+    // (see the note where renderList excludes them) -- projected directly in screen space rather
+    // than through the shared translate/scale/rotate transform, since there's no rotation or
+    // world-radius shape to it, just a glow at a point.
+    ctx.globalAlpha = 1.0;
+    bossEffects3D.filter(e => e.kind === "flash").forEach(t => {
+        if (t.z < 10) return;
+        let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
+        let delay = t.delay || 0, elapsed = t.maxLife - t.life;
+        if (elapsed < delay) return;
+        let localMax = Math.max(0.001, t.maxLife - delay);
+        let fa = Math.max(0, Math.min(1, t.life / localMax));
+        let r = t.size * scale * (0.4 + 0.6 * (1 - fa));
+        applyGlow(ctx, "#ffaa33", 22);
+        let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+        g.addColorStop(0, `rgba(255,255,225,${fa})`);
+        g.addColorStop(0.45, `rgba(255,160,60,${fa * 0.85})`);
+        g.addColorStop(1, "rgba(255,60,20,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.fill();
+        clearGlow(ctx);
     });
 
     // --- COCKPIT ---
@@ -3012,18 +3106,22 @@ function render3D() {
 
     // Banner high on the glass, out of the flight path. During a boss pursuit it carries the
     // target's name and a threat bar instead of the anomaly countdown.
+    // During bossDeathTimer the boss entity is already gone (killed, exploding) but bossPursuit
+    // is still true for that last ~1.3s -- keyed off bossPursuit itself rather than the entity's
+    // existence, or the banner reverted to the (meaningless, levelTimer3D-is-0) anomaly countdown
+    // for the entire death animation.
     let pursuitBoss = bossPursuit ? targets3D.find(t => t.isBoss) : null;
-    let hudLabel = pursuitBoss
-        ? `TARGET: ${bossPursuitName}`
+    let hudLabel = bossPursuit
+        ? (pursuitBoss ? `TARGET: ${bossPursuitName}` : `${bossPursuitName} DOWN`)
         : `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
     ctx.font = "bold 15px Courier New"; ctx.textAlign = "center";
     let hudW = ctx.measureText(hudLabel).width;
     let bannerY = canvas.height * 0.155;
-    let boxW = Math.max(hudW + 24, pursuitBoss ? 300 : 0), boxH = pursuitBoss ? 34 : 22;
+    let boxW = Math.max(hudW + 24, bossPursuit ? 300 : 0), boxH = pursuitBoss ? 34 : 22;
     ctx.fillStyle = "rgba(0, 24, 22, 0.45)"; ctx.fillRect(CX - boxW/2, bannerY - 16, boxW, boxH);
-    ctx.strokeStyle = pursuitBoss ? "rgba(255, 90, 90, 0.5)" : "rgba(0, 255, 200, 0.35)";
+    ctx.strokeStyle = bossPursuit ? "rgba(255, 90, 90, 0.5)" : "rgba(0, 255, 200, 0.35)";
     ctx.lineWidth = 1; ctx.strokeRect(CX - boxW/2, bannerY - 16, boxW, boxH);
-    ctx.fillStyle = pursuitBoss ? "rgba(255, 140, 120, 0.95)" : (levelTimer3D < 6 ? "rgba(255, 90, 90, 0.95)" : "rgba(0, 255, 200, 0.9)");
+    ctx.fillStyle = bossPursuit ? "rgba(255, 140, 120, 0.95)" : (levelTimer3D < 6 ? "rgba(255, 90, 90, 0.95)" : "rgba(0, 255, 200, 0.9)");
     ctx.fillText(hudLabel, CX, bannerY);
 
     if (pursuitBoss) {

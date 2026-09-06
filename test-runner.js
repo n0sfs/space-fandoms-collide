@@ -323,9 +323,14 @@
 
         // Wound it just past the threshold with a single shot.
         boss.hp = Math.ceil(boss.maxHp * 0.5) + 1;
-        ship.x = boss.x - 120; ship.y = boss.y; mouse.x = boss.x; mouse.y = boss.y;
+        ship.x = boss.x - 120; ship.y = boss.y;
         mouse.leftDown = true; fireCooldown = 0;
-        for (let f = 0; f < 200 && !bossPursuit; f++) update(0.016);
+        // Re-aim at the boss's live position every frame rather than a one-time snapshot -- a
+        // dreadnought carries its own slow drift velocity, and a fixed aim point taken once
+        // before a 200-frame loop is exactly the kind of test that passes 99% of the time and
+        // then flakes the one time the boss's random spawn velocity happens to carry it far
+        // enough off that stale line to miss for the whole loop.
+        for (let f = 0; f < 200 && !bossPursuit; f++) { mouse.x = boss.x; mouse.y = boss.y; update(0.016); }
         mouse.leftDown = false;
         if (!bossPursuit) throw new Error('boss never broke away into a pursuit');
         if (!is3DMode) throw new Error('pursuit did not switch to the cockpit view');
@@ -395,6 +400,41 @@
         if (b3.hp < 1) throw new Error('nuke should floor the boss at 1 HP, not kill it');
     });
 
+    test('a non-lethal hit on the pursuit boss spawns a small impact burst', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss]; beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        b3.hp = 999;   // stays alive so this is unambiguously the non-lethal path
+        bossEffects3D = [];
+        bullets3D.push({ x: b3.x, y: b3.y, z: b3.z, vx: 0, vy: 0, vz: 0, r: 5, color: '#fff' });
+        update3D(0.016);
+        if (b3.hp === 999) throw new Error('the test bullet never actually hit the boss');
+        let kinds = new Set(bossEffects3D.map(e => e.kind));
+        if (!kinds.has('spark')) throw new Error('a hit produced no impact sparks');
+        if (!kinds.has('flash')) throw new Error('a hit produced no impact flash');
+        if (kinds.has('smoke')) throw new Error('a non-lethal hit should not leave a smoke cloud -- that is reserved for the kill');
+    });
+
+    test('killing the pursuit boss produces a bigger, staggered explosion than a normal hit', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss]; beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        b3.hp = 1;
+        bossEffects3D = [];
+        bullets3D.push({ x: b3.x, y: b3.y, z: b3.z, vx: 0, vy: 0, vz: 0, r: 5, color: '#fff' });
+        update3D(0.016);
+        let kinds = new Set(bossEffects3D.map(e => e.kind));
+        if (!kinds.has('spark') || !kinds.has('flash') || !kinds.has('smoke')) throw new Error('the kill explosion is missing a stage: ' + [...kinds].join(','));
+        let flashes = bossEffects3D.filter(e => e.kind === 'flash');
+        if (flashes.length < 2) throw new Error('expected multiple staggered flashes for a chained explosion, got ' + flashes.length);
+        if (new Set(flashes.map(f => f.delay || 0)).size < 2) throw new Error('flashes are not actually staggered -- they all ignite at once');
+        if (bossEffects3D.filter(e => e.kind === 'spark').length < 15) throw new Error('the kill spark burst should be much larger than a routine hit');
+    });
+
     test('killing the pursuit boss ends the level and offers a perk', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 20; startLevel();
@@ -406,9 +446,13 @@
         b3.hp = 1;
         // Put a bullet right on it rather than relying on aim through a moving asteroid field.
         bullets3D.push({ x: b3.x, y: b3.y, z: b3.z, vx: 0, vy: 0, vz: 0, r: 5, color: '#fff' });
-        for (let f = 0; f < 10 && bossPursuit; f++) update3D(0.016);
+        // The kill lands within a few frames, but bossPursuit stays true through a ~1.3s death
+        // timer so the explosion has time to play before the level advances -- see bossDeathTimer.
+        for (let f = 0; f < 10; f++) update3D(0.016);
         if (lifetimeStats.bossKills <= kills) throw new Error('pursuit kill did not count as a boss kill');
-        if (bossPursuit) throw new Error('pursuit did not end when the boss died');
+        if (!bossPursuit) throw new Error('pursuit ended before the death-timer delay elapsed');
+        for (let f = 0; f < 150 && bossPursuit; f++) update3D(0.016);
+        if (bossPursuit) throw new Error('pursuit did not end once the death timer ran out');
         if (is3DMode) throw new Error('pursuit left the game stuck in the cockpit view');
         if (level !== lvl + 1) throw new Error('level did not advance after the pursuit');
         if (gameState !== 'UPGRADE_CHOICE') throw new Error('pursuit win did not offer a perk');
@@ -504,6 +548,27 @@
         let native = Math.random;
         level = 6; startLevel();
         if (Math.random !== native) throw new Error('campaign level layout replaced Math.random');
+    });
+
+    test('a thrown error mid-layout does not leave the Daily Challenge seed stuck on Math.random', () => {
+        gameDifficulty = 'moderate';
+        startGame('xwing', 'daily');
+        const nativeRandom = Math.random;
+        const realSpawnTarget = spawnTarget;
+        let capturedDuringSeededWindow = null;
+        spawnTarget = () => {
+            capturedDuringSeededWindow = Math.random;   // confirm this really runs inside the swap
+            throw new Error('forced failure to test RNG restoration');
+        };
+        let threw = false;
+        try { level = 3; startLevel(); } catch (e) { threw = true; }
+        finally { spawnTarget = realSpawnTarget; }
+        if (!threw) throw new Error('test setup problem: the forced failure never happened');
+        if (capturedDuringSeededWindow === nativeRandom) throw new Error('test did not exercise the seeded path -- spawnTarget ran before the RNG swap');
+        // The real assertion: even though a spawn call threw partway through, Math.random must
+        // still get restored (via startLevel's try/finally) rather than staying pinned to the
+        // seeded generator for every random draw for the rest of the session.
+        if (Math.random !== nativeRandom) throw new Error('Math.random was left pinned to the seeded generator after a thrown error');
     });
 
     test('ship select dropdown renders all 14 ships, with an armour row only on slow hulls', () => {
