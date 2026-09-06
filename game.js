@@ -448,6 +448,10 @@ const BOSS_DISPLAY_NAMES = {
     boss_station: "SUPERLASER STATION", boss_mothership: "MOTHERSHIP",
     boss_dreadnought: "DREADNOUGHT", boss_carrier: "BOSS CARRIER", boss_worm: "SPACE WORM",
 };
+// Smoke and ember particles trailing the wounded boss during a pursuit -- it's fleeing because
+// it's damaged, so it should visibly be damaged. World-space (x/y/z), rendered with the same
+// perspective projection as everything else in targets3D rather than the 2D particle system.
+let bossEffects3D = [];
 let sentinelSpawnQueue = 0, sentinelSpawnTimer = 0, sentinelSpeedMod = 1;
 const FOV = 500;
 let camX = 0, camY = 0;
@@ -581,7 +585,7 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; is3DMode = false; targets3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; is3DMode = false; targets3D = []; bossEffects3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -1777,7 +1781,7 @@ function beginBossPursuit(boss) {
     if (swarmBarEl) swarmBarEl.classList.add("hidden");
 
     is3DMode = true;
-    targets3D = []; bullets3D = []; enemyBullets3D = [];
+    targets3D = []; bullets3D = []; enemyBullets3D = []; bossEffects3D = [];
     camX = 0; camY = 0; tookDamageThisHyperspace = false;
     levelTimer3D = 0;               // the survival clock is not what ends this round
     invulnTimer = Math.max(invulnTimer, 1.5);
@@ -1808,7 +1812,7 @@ function beginBossPursuit(boss) {
 function endBossPursuit(victory) {
     bossPursuit = false;
     is3DMode = false;
-    targets3D = []; bullets3D = []; enemyBullets3D = [];
+    targets3D = []; bullets3D = []; enemyBullets3D = []; bossEffects3D = [];
     if (!victory) return;
     let clearedLevel = level;
     level++; updateUI();
@@ -2209,6 +2213,19 @@ function update3D(dt) {
             }
             t.x += t.vx * dt; t.y += t.vy * dt;
             if (t.hitFlash > 0) t.hitFlash -= dt;
+
+            // It's fleeing because it's wounded, so it should look wounded: smoke and embers
+            // trail off the hull, more of both the closer it is to dying.
+            let hurtFrac = 1 - (t.hp / t.maxHp);
+            if (Math.random() < 0.16 + hurtFrac * 0.5) {
+                let ox = (Math.random() - 0.5) * t.r * 1.3, oy = (Math.random() - 0.5) * t.r * 1.1;
+                bossEffects3D.push({
+                    x: t.x + ox, y: t.y + oy, z: t.z + (Math.random() - 0.5) * t.r * 0.4,
+                    vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 30, vz: -10,
+                    life: 1.1 + Math.random() * 0.7, maxLife: 1.1,
+                    size: 14 + Math.random() * 16, kind: Math.random() < 0.6 ? "smoke" : "ember",
+                });
+            }
             // Falls through to the bullet-collision pass below -- it just skips the generic
             // fly-past movement, the depth cull and the ram check, none of which suit a duel.
         } else {
@@ -2243,6 +2260,11 @@ function update3D(dt) {
         if (hit) targets3D.splice(i, 1);
     }
     stars3D.forEach(s => { s.z -= 1500 * dt; if (s.z < 10) { s.z = 3000; s.x = camX + (Math.random()-0.5)*4000; s.y = camY + (Math.random()-0.5)*4000; } });
+    for (let i = bossEffects3D.length - 1; i >= 0; i--) {
+        let e = bossEffects3D[i];
+        e.x += e.vx * dt; e.y += e.vy * dt; e.z += e.vz * dt; e.life -= dt;
+        if (e.life <= 0) bossEffects3D.splice(i, 1);
+    }
 }
 
 function update(dt) {
@@ -2607,21 +2629,23 @@ function update(dt) {
 }
 
 function render3D() {
-    ctx.fillStyle = `hsl(${level * 15}, 35%, 4%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Near-black, not the colored-fog wash this used to be. A faint hue drifts with the level so
+    // anomalies still have some mood to them, but at this saturation/lightness it reads as the
+    // deep black of real space rather than an atmosphere.
+    ctx.fillStyle = `hsl(${level * 15}, 15%, 1.5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
 
     let CX = canvas.width/2, CY = canvas.height/2;
 
-    // Soft nebula backdrop, drifting slowly opposite the camera for a hint of parallax depth
+    // A hint of distant nebula, not a haze sitting over the whole scene -- one dim patch, no
+    // longer three overlapping washes bright enough to fog out the black of space.
     let nebulaHue = (level * 15) % 360;
-    [[0.28, 0.32, nebulaHue + 20, 0.55], [0.68, 0.45, nebulaHue - 40, 0.5], [0.5, 0.7, nebulaHue + 190, 0.45]].forEach(([fx, fy, hue, size]) => {
-        let nx = canvas.width * fx - camX * 0.02; let ny = canvas.height * fy - camY * 0.02;
-        let ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, canvas.width * size);
-        ng.addColorStop(0, `hsla(${hue}, 70%, 45%, 0.16)`);
-        ng.addColorStop(1, `hsla(${hue}, 70%, 45%, 0)`);
-        ctx.fillStyle = ng; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    });
+    let nx = canvas.width * 0.32 - camX * 0.015, ny = canvas.height * 0.28 - camY * 0.015;
+    let ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, canvas.width * 0.6);
+    ng.addColorStop(0, `hsla(${nebulaHue}, 40%, 30%, 0.045)`);
+    ng.addColorStop(1, `hsla(${nebulaHue}, 40%, 30%, 0)`);
+    ctx.fillStyle = ng; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.fillStyle = "#fff";
     stars3D.forEach(s => {
@@ -2631,7 +2655,14 @@ function render3D() {
     });
     ctx.globalAlpha = 1.0;
 
-    let renderList = [...targets3D].sort((a,b) => b.z - a.z);
+    // Damage effects are merged into the same depth sort as everything else so a smoke puff
+    // drifting in front of an asteroid actually occludes it, rather than always drawing on top.
+    let renderList = [...targets3D, ...bossEffects3D.map(e => ({ ...e, __isEffect: true, angle: 0 }))]
+        .sort((a,b) => b.z - a.z);
+    // A fixed light source (upper-left, as if lit by a distant sun) used for the boss's rim
+    // light and ambient-occlusion shadow below -- real light in space is hard and directional,
+    // not the flat, self-lit look every hull gets from its own top-down 2D shading.
+    const LIGHT_ANGLE = -2.35;
 
     bullets3D.forEach(b => {
         if (b.z < 10) return;
@@ -2652,7 +2683,20 @@ function render3D() {
         let scale = FOV / t.z; let sx = (t.x - camX) * scale + CX; let sy = (t.y - camY) * scale + CY;
         ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
         ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
-        if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
+        if (t.__isEffect) {
+            // Smoke and embers trailing a wounded pursuit boss -- world-space particles sharing
+            // the same perspective projection as everything else, so they sit correctly among
+            // the asteroids instead of floating on top of the scene as a screen-space overlay.
+            let a = Math.max(0, t.life / t.maxLife);
+            if (t.kind === "smoke") {
+                ctx.globalAlpha = a * 0.35; ctx.fillStyle = "#26262a";
+                ctx.beginPath(); ctx.arc(0, 0, t.size, 0, Math.PI*2); ctx.fill();
+            } else {
+                ctx.globalAlpha = a; applyGlow(ctx, "#ff8833", 12);
+                ctx.fillStyle = "#ffcc88"; ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI*2); ctx.fill();
+                clearGlow(ctx);
+            }
+        } else if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
         else {
             if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false);
             else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
@@ -2661,9 +2705,30 @@ function render3D() {
             // hidden for the draw because the designs hang the bar at -r-20, which at this world
             // radius floats far above the hull as a detached red line; the cockpit HUD carries it.
             else if (t.isBoss && TargetDesigns[t.type]) {
+                // Contact-shadow halo first, so it reads as a soft dark falloff at the hull's
+                // edges -- the same trick popHalo() uses for a glow, run in reverse for weight.
+                let ao = ctx.createRadialGradient(t.r*0.25, t.r*0.35, t.r*0.15, 0, 0, t.r*1.35);
+                ao.addColorStop(0, "rgba(0,0,0,0)"); ao.addColorStop(1, "rgba(0,0,0,0.6)");
+                ctx.fillStyle = ao; ctx.beginPath(); ctx.arc(0, 0, t.r*1.35, 0, Math.PI*2); ctx.fill();
+
                 let hp = t.hp; t.hp = undefined;
                 TargetDesigns[t.type].draw(ctx, t.r, t);
                 t.hp = hp;
+
+                // Hard rim light along the sun-facing edge -- directional, not the ambient glow
+                // every hull already draws around itself, which is what sells a lit solid object
+                // rather than a flat sprite.
+                ctx.strokeStyle = "rgba(215, 232, 255, 0.4)"; ctx.lineWidth = t.r * 0.05;
+                ctx.beginPath(); ctx.arc(0, 0, t.r * 0.97, LIGHT_ANGLE - 0.9, LIGHT_ANGLE + 0.9); ctx.stroke();
+
+                // A couple of independently-blinking hazard lights for scale and detail at range.
+                [[0.75, -0.3, 0], [-0.6, 0.5, 1.7]].forEach(([lx, ly, phase]) => {
+                    if (Math.sin(frames * 0.05 + phase * 3) > 0.5) {
+                        applyGlow(ctx, "#ff3333", 6); ctx.fillStyle = "#ff5555";
+                        ctx.beginPath(); ctx.arc(t.r * lx, t.r * ly, t.r * 0.03, 0, Math.PI*2); ctx.fill();
+                        clearGlow(ctx);
+                    }
+                });
             }
             else TargetDesigns.asteroid.draw(ctx, t.r, t);
         }

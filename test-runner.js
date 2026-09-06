@@ -357,6 +357,30 @@
         if (!targets3D.includes(b3)) throw new Error('pursuit boss was culled by the depth logic');
     });
 
+    test('a wounded pursuit boss trails smoke and embers, and they clear when the pursuit ends', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss]; beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        b3.hp = Math.round(b3.maxHp * 0.1);   // heavily wounded: effects should spawn quickly
+        for (let f = 0; f < 120; f++) update3D(0.016);
+        if (bossEffects3D.length === 0) throw new Error('a heavily wounded pursuit boss produced no smoke/embers');
+        if (!bossEffects3D.every(e => e.kind === 'smoke' || e.kind === 'ember')) throw new Error('unexpected effect kind');
+        endBossPursuit(false);
+        if (bossEffects3D.length !== 0) throw new Error('boss effects leaked past the end of the pursuit');
+    });
+
+    test('the 3D scene stays dark -- no bright colour wash from the nebula backdrop', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 7; startLevel(); gameState = 'PLAYING';
+        render3D();
+        // Sample a patch of open sky (upper-left quadrant, away from the cockpit airframe and HUD).
+        let sample = ctx.getImageData(Math.round(canvas.width * 0.15), Math.round(canvas.height * 0.12), 1, 1).data;
+        let brightness = (sample[0] + sample[1] + sample[2]) / 3;
+        if (brightness > 40) throw new Error('background is too bright for deep space: rgb(' + sample[0] + ',' + sample[1] + ',' + sample[2] + ')');
+    });
+
     test('a nuke cannot delete the pursuit boss or hand a free win', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 20; startLevel();
