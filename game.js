@@ -25,6 +25,7 @@ const comboEl = document.getElementById("comboDisplay");
 const scrapEl = document.getElementById("scrapDisplay");
 const statusEl = document.getElementById("statusDisplay");
 const swarmBarEl = document.getElementById("swarmBar");
+const livesEl = document.getElementById("livesDisplay");
 const swarmCountEl = document.getElementById("swarmCount");
 const swarmTotalEl = document.getElementById("swarmTotal");
 
@@ -186,7 +187,7 @@ let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, game
 let unlockedAch = {};
 let achievementToasts = [];
 let tookDamageThisHyperspace = false;
-let runKills = 0, runBestCombo = 1;
+let runKills = 0, runBestCombo = 1, runGrazes = 0;
 let gameOverMessage = "";
 let equippedTrail = "classic";
 
@@ -688,7 +689,10 @@ const ShipDesigns = {
             if (thrusting) { applyGlow(ctx, "#00d4ff", 20); ctx.fillStyle = "#e0f7fa"; ctx.fillRect(-r*0.9, -r*0.95, r*0.8, r*0.2); ctx.fillRect(-r*0.9, r*0.75, r*0.8, r*0.2); applyGlow(ctx, "#ff5500", 15); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(-r*0.3, 0, 4, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
         }
     },
-    apollo: { name: "APOLLO", laserColor: "#ffaa00", stats: { thrust: 9, fric: 1.0, fireRate: 0.25, heat: 15 }, 
+    // fric must stay below 1.0: at exactly 1.0 velocity never decays, so the ship accelerates
+    // without bound (~8000 px/s after 15s of thrust) and tunnels straight through targets
+    // between frames. 0.995 keeps it by far the driftiest hull while staying bounded.
+    apollo: { name: "APOLLO", laserColor: "#ffaa00", stats: { thrust: 9, fric: 0.995, fireRate: 0.25, heat: 15 },
         fire: () => { bullets.push(createBolt(0)); playSfx('shoot'); },
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#ffaa00");
@@ -820,6 +824,35 @@ const ShipDesigns = {
     }
 };
 
+// A hull's real terminal velocity in px/sec. Thrust alone badly misrepresents how fast a ship
+// actually is -- friction dominates. Each frame does `v = (v + thrust*dt) * fric`, which settles
+// at v = thrust*dt*fric/(1-fric). The Enterprise and the X-Wing are one thrust point apart on
+// paper but 4x apart in practice, and enemy chase speeds have to be judged against this, not thrust.
+const SIM_DT = 1 / 60;
+function shipTopSpeed(shipId, speedUpgrades = 0) {
+    let s = ShipDesigns[shipId] && ShipDesigns[shipId].stats;
+    if (!s) return 300;
+    let fric = Math.min(0.9999, s.fric);
+    let a = s.thrust * (1 + speedUpgrades * 0.05) * SIM_DT;
+    return (a * fric / (1 - fric)) * 60;
+}
+function playerTopSpeed() { return shipTopSpeed(selectedShipType, upgrades.speed || 0); }
+
+// Slow hulls used to trade mobility for nothing at all -- the Borg Cube tops out at 27 px/s and
+// simply cannot avoid anything, which made it a trap pick rather than a playstyle. Ships below
+// the ~250 px/s reference get proportional damage resistance and a trickle of shield regen, so
+// the trade is real: you can't dodge, but you can soak and outlast.
+const RESILIENCE_REF_SPEED = 250;
+function hullResilience(shipId, speedUpgrades = 0) {
+    let t = Math.max(0, Math.min(1, (RESILIENCE_REF_SPEED - shipTopSpeed(shipId, speedUpgrades)) / RESILIENCE_REF_SPEED));
+    return { damageMult: 1 - 0.45 * t, shieldRegen: 6 * t, factor: t };
+}
+function playerResilience() { return hullResilience(selectedShipType, upgrades.speed || 0); }
+function regenShields(dt) {
+    let regen = playerResilience().shieldRegen;
+    if (regen > 0 && playerShield < playerMaxShield) playerShield = Math.min(playerMaxShield, playerShield + regen * dt);
+}
+
 // --- SHIP SELECT DROPDOWN ---
 const ShipMenuOrder = [
     { id: "xwing", label: "X-Wing (Balanced)" },
@@ -862,15 +895,25 @@ function setMenuShip(shipId) {
 function shipStatBars(shipId) {
     let s = ShipDesigns[shipId] && ShipDesigns[shipId].stats;
     if (!s) return "";
-    let all = Object.values(ShipDesigns).filter(d => d.stats).map(d => d.stats);
-    let minT = Math.min(...all.map(a => a.thrust)), maxT = Math.max(...all.map(a => a.thrust));
+    let ids = Object.keys(ShipDesigns).filter(id => ShipDesigns[id].stats);
+    let all = ids.map(id => ShipDesigns[id].stats);
     let minR = Math.min(...all.map(a => a.fireRate)), maxR = Math.max(...all.map(a => a.fireRate));
-    let spd = maxT > minT ? Math.round(1 + ((s.thrust - minT) / (maxT - minT)) * 4) : 3;
+    // Speed is rated on real terminal velocity, not thrust. Friction dominates the flight model,
+    // so the old thrust-only rating claimed the Enterprise was a shade slower than the X-Wing
+    // when it actually tops out at a quarter the speed. Log-scaled: the roster spans 27-1800 px/s
+    // and a linear map flattens the entire slow half of the lineup into one dot.
+    let speeds = ids.map(id => shipTopSpeed(id));
+    let lo = Math.log(Math.min(...speeds)), hi = Math.log(Math.max(...speeds));
+    let top = shipTopSpeed(shipId);
+    let spd = hi > lo ? Math.round(1 + ((Math.log(top) - lo) / (hi - lo)) * 4) : 3;
     let rate = maxR > minR ? Math.round(1 + ((maxR - s.fireRate) / (maxR - minR)) * 4) : 3;
+    let res = hullResilience(shipId);
+    let armorPct = Math.round((1 - res.damageMult) * 100);
     let dots = (n) => Array.from({length: 5}, (_, i) => `<span class="ship-stat-dot ${i < n ? 'filled' : ''}"></span>`).join('');
     return `<span class="ship-stat-bars">
-        <span class="ship-stat-row"><span class="ship-stat-label spd">SPD</span><span class="ship-stat-dots">${dots(spd)}</span></span>
+        <span class="ship-stat-row"><span class="ship-stat-label spd">SPD</span><span class="ship-stat-dots">${dots(spd)}</span><span class="ship-stat-num">${Math.round(top)}</span></span>
         <span class="ship-stat-row"><span class="ship-stat-label rate">RATE</span><span class="ship-stat-dots">${dots(rate)}</span></span>
+        ${armorPct >= 5 ? `<span class="ship-stat-row"><span class="ship-stat-label armr">ARMR</span><span class="ship-stat-dots">${dots(Math.round(1 + res.factor * 4))}</span><span class="ship-stat-num">-${armorPct}%</span></span>` : ''}
     </span>`;
 }
 
@@ -1270,7 +1313,23 @@ const TargetDesigns = {
     },
     boss_worm: {
         draw: (ctx, r, t) => {
+            let burrow = t.burrow || 0;
+            const hpBar = () => { if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-25, r*2*hp, 6); ctx.restore(); } };
+            if (burrow > 0.97) {
+                // Fully submerged: all the player can read is the disturbance it drags along the
+                // surface. That ripple is the telegraph -- it's where the worm will erupt.
+                ctx.save(); ctx.rotate(-t.angle);
+                let pulse = 0.5 + Math.sin(frames * 0.18) * 0.5;
+                ctx.strokeStyle = `rgba(136, 204, 68, ${0.35 + pulse * 0.35})`; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(0, 0, r * (0.7 + pulse * 0.5), 0, Math.PI * 2); ctx.stroke();
+                ctx.strokeStyle = `rgba(136, 204, 68, ${0.18 + pulse * 0.18})`; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(0, 0, r * (1.3 + pulse * 0.8), 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+                hpBar();
+                return;
+            }
             if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill(); return; }
+            ctx.globalAlpha = 1 - burrow * 0.85;
             popHalo(ctx, r, "#88cc44", 0.4);
             let headGrad = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r*1.15);
             headGrad.addColorStop(0, "#a8d97e"); headGrad.addColorStop(0.55, "#4f7a3a"); headGrad.addColorStop(1, "#182a10");
@@ -1284,7 +1343,8 @@ const TargetDesigns = {
             ctx.beginPath(); ctx.ellipse(r * 0.65, 0, r * 0.42, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = "#ff5555"; ctx.beginPath(); ctx.ellipse(r * 0.72, 0, r * 0.16, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
             clearGlow(ctx);
-            if (t.hp !== undefined) { ctx.save(); ctx.rotate(-t.angle); let hp = Math.max(0, t.hp/t.maxHp); ctx.fillStyle = "red"; ctx.fillRect(-r, -r-25, r*2*hp, 6); ctx.restore(); }
+            ctx.globalAlpha = 1;
+            hpBar();
         }
     },
     sentinel: {
@@ -1491,6 +1551,21 @@ function generateJaggedAsteroid(r) {
     return { vertices, craters, facets, baseColor, shadowColor };
 }
 
+// Sentinels re-home every frame with no drag, so their raw speed has to be judged against the
+// player's real terminal velocity rather than against thrust. Unclamped, a level-15 sentinel
+// (450-675 px/s) outran 11 of the 14 hulls -- and the Borg Cube by 25x -- leaving most of the
+// roster no way to disengage at all. Capping just under the player's top speed keeps them
+// menacing while making flight a real, if expensive, option.
+function sentinelChaseSpeed(speedMod) {
+    let raw = 3 * speedMod;                        // px/frame, the original difficulty curve
+    let cap = (playerTopSpeed() * 0.85) / 60;      // px/frame, 85% of what this hull can actually reach
+    return Math.max(1.0, Math.min(raw, cap));
+}
+
+// Body-segment radius for the worm's Nth trail point. Shared by the renderer and the contact
+// check so the solid body always matches exactly what the player can see.
+function wormSegmentRadius(t, i) { return t.r * (0.82 - i * 0.06); }
+
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
     if (x === null) { let safeCounter = 0; do { x = Math.random() * (canvas.width || 1000); y = Math.random() * (canvas.height || 750); safeCounter++; } while (Math.hypot((ship.x || 500) - x, (ship.y || 375) - y) < 200 && safeCounter < 50); }
@@ -1500,7 +1575,7 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let t = { type: type, x: x, y: y, r: baseR, xv: (Math.random() - 0.5) * spdMult * speedMod, yv: (Math.random() - 0.5) * spdMult * speedMod, angle: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 1.5, stunned: 0 };
     if (type.startsWith("boss")) t.rotSpeed = 0.2;
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
-    if (type === "sentinel") t.chaseSpeed = 3 * speedMod;
+    if (type === "sentinel") t.chaseSpeed = sentinelChaseSpeed(speedMod);
     if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(baseR));
     targets.push(t);
 }
@@ -1537,6 +1612,9 @@ function updateUI() {
     if(scoreEl) scoreEl.innerText = Math.round(score); if(levelEl) levelEl.innerText = level; 
     if(hpEl) hpEl.innerText = Math.ceil(playerHp); if(shEl) shEl.innerText = Math.ceil(playerShield);
     if(bombEl) bombEl.innerText = bombs; if(comboEl) comboEl.innerText = combo + "x"; if(scrapEl) scrapEl.innerText = currentRunScrap;
+    // Lives were tracked but never surfaced anywhere -- players only learned they'd lost one by
+    // noticing they'd respawned at centre.
+    if(livesEl) { livesEl.innerText = "▲".repeat(Math.max(0, lives)) || "—"; livesEl.style.color = lives <= 1 ? "#ff3333" : "#ff9944"; }
     
     if(heatEl) {
         heatEl.innerText = Math.ceil(heat) + "%";
@@ -1565,6 +1643,8 @@ function updateUI() {
 
 function damagePlayer(amt) {
     if (invulnTimer > 0 || gameState !== "PLAYING") return;
+    // Heavy, slow hulls shrug off part of every hit -- see hullResilience().
+    amt = Math.max(1, Math.round(amt * playerResilience().damageMult));
     tookDamageThisHyperspace = true;
     playSfx('hit'); shake += 5; vibrate(40); spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
     spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
@@ -1577,7 +1657,12 @@ function damagePlayer(amt) {
     
     if (playerHp <= 0) {
         playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
-        if (lives > 1) { lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield; updateUI(); } 
+        if (lives > 1) {
+            lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield;
+            spawnText(canvas.width/2, canvas.height/2 - 40, "SHIP LOST", "#ff3333", 26);
+            spawnText(canvas.width/2, canvas.height/2, `${lives} ${lives === 1 ? "SHIP" : "SHIPS"} REMAINING`, "#ffcc00", 18);
+            updateUI();
+        }
         else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap; checkAndSaveScore(); saveGameData(); gameOverMessage = ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]; gameState = "GAMEOVER"; }
     }
     updateUI();
@@ -1597,7 +1682,7 @@ function startGame(shipId) {
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
     combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0;
-    runKills = 0; runBestCombo = 1;
+    runKills = 0; runBestCombo = 1; runGrazes = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
@@ -1606,8 +1691,34 @@ function startGame(shipId) {
     updateUI(); startLevel(); gameState = "PLAYING"; 
 }
 
+// Every 5th non-hyperspace level is a boss level. This used to be a chain of modulus checks
+// (%15 -> %25 -> %20 -> %10 -> %55 -> %65) in which earlier rules starved later ones: across
+// levels 1-1000 the Carrier appeared 4 times and the Worm twice, and neither ever landed inside
+// the 26-level campaign. Walking an explicit rotation gives every boss a predictable cadence
+// while keeping levels 5/10/15/20/25 exactly as players already know them.
+const BOSS_ROTATION = [
+    "boss_station",     // L5
+    "boss_mothership",  // L10
+    "sentinel_swarm",   // L15
+    "boss_dreadnought", // L20
+    "hive_swarm",       // L25
+    "boss_carrier",     // L30
+    "boss_worm",        // L40 -- L35 is a hyperspace level, so it's skipped rather than consumed
+];
+// Boss levels at or before `level` = multiples of 5, minus those that are also multiples of 7
+// (hyperspace steals those). Pure arithmetic, so jumping straight to a level while testing
+// selects the same boss it would in a real run.
+function bossForLevel(level) {
+    if (level % 5 !== 0 || level % 7 === 0) return null;
+    let bossLevelsSoFar = Math.floor(level / 5) - Math.floor(level / 35);
+    return BOSS_ROTATION[(bossLevelsSoFar - 1) % BOSS_ROTATION.length];
+}
+
 function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
+    // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
+    // Swarm cleared before its trickle finished bleeds its leftovers into the next level.
+    sentinelSpawnQueue = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel) lifetimeStats.highestLevel = level;
@@ -1639,7 +1750,8 @@ function startLevel() {
     let speedMod = speedMult + (level * 0.1 * speedMult);
 
     if (level % 5 === 0 && !is3DMode) {
-        if (level % 15 === 0) {
+        let bossKind = bossForLevel(level);
+        if (bossKind === "sentinel_swarm") {
             // Trickle the swarm in instead of dumping the whole roster on the player at once --
             // an initial wave, then the rest arrive gradually (see the update() loop).
             let numSentinels = Math.floor(32 * diffMult);
@@ -1648,7 +1760,7 @@ function startLevel() {
             sentinelSpawnQueue = numSentinels - initialWave;
             sentinelSpeedMod = speedMod;
             sentinelSpawnTimer = 1.2;
-        } else if (level % 25 === 0) {
+        } else if (bossKind === "hive_swarm") {
             let numMinions = Math.floor((12 + level * 0.3) * diffMult);
             let queenIndex = Math.floor(Math.random() * numMinions);
             for (let i = 0; i < numMinions; i++) {
@@ -1663,24 +1775,29 @@ function startLevel() {
             }
             hiveSwarmActive = true; hiveSwarmTotal = numMinions; hiveFireTimer = 2.5; hiveEnraged = false;
             spawnText(canvas.width/2, canvas.height/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
-        } else if (level % 20 === 0) {
+        } else if (bossKind === "boss_dreadnought") {
             let bossR = 90 + (level * 1.0); spawnTarget("boss_dreadnought", bossR, speedMod * 0.15);
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((40 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.5 / diffMult; boss.broadsideTimer = 3.0;
-        } else if (level % 10 === 0) {
+        } else if (bossKind === "boss_mothership") {
             let bossR = 80 + (level * 1.2); spawnTarget("boss_mothership", bossR, speedMod * 0.2);
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
             boss.nodes = [{ang: 0, hp: 4}, {ang: Math.PI/2, hp: 4}, {ang: Math.PI, hp: 4}, {ang: Math.PI*1.5, hp: 4}];
-        } else if (level % 55 === 0) {
+        } else if (bossKind === "boss_carrier") {
             let bossR = 85 + (level * 1.1); spawnTarget("boss_carrier", bossR, speedMod * 0.15);
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((50 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.launchTimer = 3.0;
-        } else if (level % 65 === 0) {
-            let bossR = 42; spawnTarget("boss_worm", bossR, speedMod * 0.4);
+        } else if (bossKind === "boss_worm") {
+            let bossR = 46; spawnTarget("boss_worm", bossR, speedMod * 0.4);
             let boss = targets[targets.length - 1];
             boss.maxHp = Math.floor((70 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
             boss.trail = []; boss.wiggle = Math.random() * Math.PI * 2;
+            // Burrow cycle: it surfaces to hunt, then submerges (invulnerable, harmless, and
+            // clearly telegraphed) before erupting again near the player.
+            boss.wormPhase = "up"; boss.wormTimer = 9.0; boss.burrow = 0;
+            spawnText(canvas.width/2, canvas.height/2 - 20, "SOMETHING MOVES BENEATH", "#88cc44", 24);
+            spawnText(canvas.width/2, canvas.height/2 + 16, "ONLY THE HEAD IS VULNERABLE", "#ffcc00", 15);
         } else {
             let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
             let boss = targets[targets.length - 1];
@@ -1699,7 +1816,7 @@ function startLevel() {
         }
         if (level > 4) {
             let numSentinels = Math.floor(Math.floor(level / 4) * diffMult); if (numSentinels < 1 && gameDifficulty !== 'easy') numSentinels = 1;
-            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.5);
+            for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.2);
         }
     }
     updateUI();
@@ -1735,6 +1852,7 @@ function update3D(dt) {
     if (nukeFlash > 0) nukeFlash -= dt * 2;
     if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 1; updateUI(); }
     if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } else { heat -= 20 * dt; if (heat < 0) heat = 0; }
+    regenShields(dt);
 
     let stats = ShipDesigns[selectedShipType].stats;
     let speed = stats.thrust * 100 * (1 + (upgrades.speed * 0.05));
@@ -1837,8 +1955,9 @@ function update(dt) {
     if (invulnTimer > 0) invulnTimer -= dt;
     if (nukeFlash > 0) nukeFlash -= dt * 2;
     if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) combo = 1; updateUI(); }
-    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } } 
+    if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } }
     else { heat -= 20 * dt; if (heat < 0) heat = 0; }
+    regenShields(dt);
 
     const wrap = (obj) => { if (obj.x < -obj.r) obj.x = canvas.width + obj.r; else if (obj.x > canvas.width + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = canvas.height + obj.r; else if (obj.y > canvas.height + obj.r) obj.y = -obj.r; };
     wrap(ship);
@@ -1905,9 +2024,20 @@ function update(dt) {
 
     for (let i = bullets.length - 1; i >= 0; i--) { bullets[i].x += bullets[i].xv; bullets[i].y += bullets[i].yv; wrap(bullets[i]); bullets[i].range -= Math.hypot(bullets[i].xv, bullets[i].yv); if (bullets[i].range < 0) bullets.splice(i, 1); }
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        enemyBullets[i].x += enemyBullets[i].xv * slowFactor; enemyBullets[i].y += enemyBullets[i].yv * slowFactor; wrap(enemyBullets[i]); enemyBullets[i].range -= Math.hypot(enemyBullets[i].xv, enemyBullets[i].yv) * slowFactor;
-        if (Math.hypot(ship.x - enemyBullets[i].x, ship.y - enemyBullets[i].y) < ship.r + 2 && invulnTimer <= 0) { damagePlayer(15); enemyBullets.splice(i, 1); continue; }
-        if (enemyBullets[i].range < 0) enemyBullets.splice(i, 1);
+        let eb = enemyBullets[i];
+        eb.x += eb.xv * slowFactor; eb.y += eb.yv * slowFactor; wrap(eb); eb.range -= Math.hypot(eb.xv, eb.yv) * slowFactor;
+        let d = Math.hypot(ship.x - eb.x, ship.y - eb.y);
+        if (d < ship.r + 2 && invulnTimer <= 0) { damagePlayer(15); enemyBullets.splice(i, 1); continue; }
+        // Close call: dodging was previously worth nothing, so the only scoring verb was killing.
+        // Each bullet can graze once, and only while it's genuinely dangerous.
+        if (!eb.grazed && invulnTimer <= 0 && d < ship.r + 26 && d > ship.r + 5) {
+            eb.grazed = true; runGrazes++;
+            score += diffScoreMult * 15 * combo;
+            comboTimer = Math.max(comboTimer, 2.0);
+            spawnText(ship.x, ship.y - 28, "CLOSE!", "#ffee66", 13);
+            playSfx('scrap'); updateUI();
+        }
+        if (eb.range < 0) enemyBullets.splice(i, 1);
     }
 
     for (let i = powerups.length - 1; i >= 0; i--) {
@@ -1926,6 +2056,7 @@ function update(dt) {
     }
 
     targets.forEach(t => {
+        if (t.stunCooldown > 0) t.stunCooldown -= dt;
         if (t.stunned > 0) { t.stunned -= dt; return; }
         t.x += t.xv * slowFactor; t.y += t.yv * slowFactor; t.angle += t.rotSpeed * dt;
         if (t.hitFlash > 0) t.hitFlash -= dt;
@@ -1961,17 +2092,40 @@ function update(dt) {
             // sine-wave wiggle added to the heading so the path weaves instead of arcing cleanly.
             if (t.trail === undefined) t.trail = [];
             if (t.wiggle === undefined) t.wiggle = 0;
+            if (t.burrow === undefined) { t.burrow = 0; t.wormPhase = "up"; t.wormTimer = 9.0; }
+
+            // Burrow cycle. Surfaced, it hunts and can be hurt; submerged, it is untouchable and
+            // harmless but still visibly tracking the player, so the eruption is always telegraphed
+            // and the fight has a rhythm instead of being one long circle-strafe.
+            t.wormTimer -= dt;
+            if (t.wormTimer <= 0) {
+                if (t.wormPhase === "up") {
+                    t.wormPhase = "down"; t.wormTimer = 4.0;
+                    playSfx('glitch'); spawnText(t.x, t.y, "IT BURROWS", "#88cc44", 18);
+                } else {
+                    t.wormPhase = "up"; t.wormTimer = 9.0; shake += 12;
+                    playSfx('boom'); spawnParticles(t.x, t.y, "#88cc44", 26);
+                    spawnText(t.x, t.y, "IT ERUPTS!", "#ff5555", 22);
+                }
+            }
+            let targetBurrow = t.wormPhase === "down" ? 1 : 0;
+            t.burrow += (targetBurrow > t.burrow ? 1 : -1) * dt * 1.6;
+            t.burrow = Math.max(0, Math.min(1, t.burrow));
+            t.submerged = t.burrow > 0.6;
+
             t.wiggle += dt * 2.2;
             let dx = ship.x - t.x, dy = ship.y - t.y;
             let distToPlayer = Math.hypot(dx, dy) || 1;
             let angToPlayer = Math.atan2(dy, dx);
-            let preferredDist = 220;
+            // Under the surface it closes for the ambush; on the surface it circles at a distance.
+            let preferredDist = t.submerged ? 60 : 200;
             let approachAng = distToPlayer > preferredDist ? angToPlayer : angToPlayer + Math.PI;
             let tangentAng = angToPlayer + Math.PI / 2;
-            let vx = Math.cos(approachAng) * 0.4 + Math.cos(tangentAng) * 0.6;
-            let vy = Math.sin(approachAng) * 0.4 + Math.sin(tangentAng) * 0.6;
-            let headingAng = Math.atan2(vy, vx) + Math.sin(t.wiggle) * 0.6;
-            let spd = 1.9;
+            let towardWeight = t.submerged ? 0.85 : 0.4;
+            let vx = Math.cos(approachAng) * towardWeight + Math.cos(tangentAng) * (1 - towardWeight);
+            let vy = Math.sin(approachAng) * towardWeight + Math.sin(tangentAng) * (1 - towardWeight);
+            let headingAng = Math.atan2(vy, vx) + Math.sin(t.wiggle) * (t.submerged ? 0.2 : 0.6);
+            let spd = t.submerged ? 3.2 : 1.9;
             t.xv = Math.cos(headingAng) * spd; t.yv = Math.sin(headingAng) * spd; t.angle = headingAng;
             // Distance-gated rather than frame-gated, so segment spacing stays consistent
             // regardless of frame rate (frames only advances inside the real rAF loop).
@@ -2035,6 +2189,7 @@ function update(dt) {
     }
 
     for (let i = targets.length - 1; i >= 0; i--) {
+        if (targets[i].type === "boss_worm" && targets[i].submerged) continue;
         let hitByTrail = false;
         for (let j = 0; j < lightTrails.length; j++) { if (Math.hypot(targets[i].x - lightTrails[j].x, targets[i].y - lightTrails[j].y) < targets[i].r + 10) { hitByTrail = true; break; } }
         if (hitByTrail) { if (targets[i].hp !== undefined) { targets[i].hp -= 0.5; spawnText(targets[i].x, targets[i].y, "-1", "#0ff", 10); } else targets[i].hp = -1; targets[i].hitFlash = 0.1; }
@@ -2044,6 +2199,7 @@ function update(dt) {
         let hit = false;
         for (let j = targets.length - 1; j >= 0; j--) {
             let t = targets[j];
+            if (t.type === "boss_worm" && t.submerged) continue;   // untouchable while it's burrowed
             let dmg = (bullets[i].isEmpBolt ? 2 : (selectedShipType === 'enterprise' ? 2 : 1)) + (upgrades.power || 0);
 
             if (t.type === "boss_mothership") {
@@ -2056,7 +2212,16 @@ function update(dt) {
             }
 
             if (Math.hypot(bullets[i].x - t.x, bullets[i].y - t.y) < (t.r + (bullets[i].r || 2))) {
-                if (bullets[i].isHack && t.type !== "asteroid" && t.type !== "satellite") { t.stunned = 3.0; spawnText(t.x, t.y, "HACKED", "#0f0", 14); }
+                // Bosses take a shorter stun and can't be re-stunned until a cooldown expires.
+                // fsociety fires every 0.18s, so an unconditional 3s stun froze any boss forever:
+                // the stunned early-return skips the entire boss AI block, so its attack timers
+                // never advanced and it never got a shot off.
+                if (bullets[i].isHack && t.type !== "asteroid" && t.type !== "satellite" && !(t.stunCooldown > 0)) {
+                    let stunBoss = t.type.startsWith("boss") || t.isQueen;
+                    t.stunned = stunBoss ? 1.0 : 3.0;
+                    t.stunCooldown = stunBoss ? 6.0 : 0;
+                    spawnText(t.x, t.y, "HACKED", "#0f0", 14);
+                }
                 if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
                 
                 playSfx('hit');
@@ -2089,18 +2254,38 @@ function update(dt) {
     }
 
     if (invulnTimer <= 0) {
-        for (let j = targets.length - 1; j >= 0; j--) {
+        let contactHit = false;
+        // The worm's body is solid. Only its head can be damaged, but the whole length is a
+        // hazard, which turns the fight into threading the gaps in a moving wall rather than
+        // circle-strafing a sponge.
+        for (let j = 0; j < targets.length && !contactHit; j++) {
             let t = targets[j];
-            if (Math.hypot(ship.x - t.x, ship.y - t.y) < ship.r + t.r * 0.8) { 
+            if (t.type !== "boss_worm" || t.submerged || !t.trail) continue;
+            for (let s = 0; s < t.trail.length; s++) {
+                let segR = wormSegmentRadius(t, s);
+                if (segR < 4) continue;
+                if (Math.hypot(ship.x - t.trail[s].x, ship.y - t.trail[s].y) < ship.r + segR * 0.8) {
+                    damagePlayer(35); spawnParticles(ship.x, ship.y, "#88cc44", 14);
+                    contactHit = true; break;
+                }
+            }
+        }
+        if (!contactHit) for (let j = targets.length - 1; j >= 0; j--) {
+            let t = targets[j];
+            if (t.type === "boss_worm" && t.submerged) continue;  // it's under the surface, not here
+            if (Math.hypot(ship.x - t.x, ship.y - t.y) < ship.r + t.r * 0.8) {
                 let isBoss = t.type.startsWith("boss");
-                damagePlayer(isBoss ? 100 : 40); 
+                damagePlayer(isBoss ? 100 : 40);
                 if (!isBoss) { spawnParticles(t.x, t.y, "#ff5500", 15); targets.splice(j, 1); }
                 break;
-            } 
+            }
         }
     }
 
-    if (targets.length === 0 && gameState === "PLAYING") {
+    // A Sentinel Swarm still has reinforcements inbound even when the screen is momentarily
+    // clear -- ending the level here used to complete it after only the opening wave and spill
+    // the remaining queue into the next level.
+    if (targets.length === 0 && sentinelSpawnQueue === 0 && gameState === "PLAYING") {
         level++; updateUI(); gameState = "LEVEL_TRANSITION"; bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup');
     }
 }
@@ -2354,16 +2539,22 @@ function render() {
     scrapDrops.forEach(s => { applyGlow(ctx, "#ff00ff", 10); ctx.fillStyle = `rgba(255, 0, 255, ${s.life/8})`; ctx.fillRect(s.x-3, s.y-3, 6, 6); clearGlow(ctx); });
 
     // Worm body segments render in world space, behind the head drawn in the normal pass below.
+    // They fade out as it burrows, matching the window in which they stop being solid.
     targets.forEach(t => {
         if (t.type !== "boss_worm" || !t.trail) return;
+        let vis = 1 - (t.burrow || 0);
+        if (vis <= 0.02) return;
         t.trail.forEach((seg, i) => {
-            let segR = t.r * (0.82 - i * 0.06);
+            let segR = wormSegmentRadius(t, i);
             if (segR < 4) return;
-            ctx.save(); ctx.translate(seg.x, seg.y);
+            ctx.save(); ctx.translate(seg.x, seg.y); ctx.globalAlpha = vis;
             let segGrad = ctx.createRadialGradient(-segR*0.3, -segR*0.3, 0, 0, 0, segR);
             segGrad.addColorStop(0, "#7fb85c"); segGrad.addColorStop(1, "#233a1c");
             ctx.fillStyle = segGrad; ctx.strokeStyle = "#0e1a0a"; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.arc(0, 0, segR, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            // A pale dorsal ridge along the top of each segment reads as a spine rather than beads.
+            ctx.globalAlpha = vis * 0.5; ctx.strokeStyle = "#c8e8a0"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(0, 0, segR * 0.72, Math.PI * 1.15, Math.PI * 1.75); ctx.stroke();
             ctx.restore();
         });
     });
@@ -2449,12 +2640,12 @@ function drawMenuOverlays() {
         ctx.fillStyle = "#ffcc00"; ctx.font = "bold 44px Courier New"; ctx.fillText("GAME OVER", cx, cy - 130);
         ctx.fillStyle = "#33ccff"; ctx.font = "bold 18px Courier New"; ctx.fillText(gameOverMessage || "NICE FLYING, PILOT!", cx, cy - 95);
 
-        let panelW = 320, panelH = 150, px = cx - panelW/2, py = cy - 65;
+        let panelW = 320, panelH = 174, px = cx - panelW/2, py = cy - 65;
         ctx.fillStyle = "rgba(20, 20, 24, 0.9)"; ctx.strokeStyle = "#444"; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.roundRect(px, py, panelW, panelH, 8); ctx.fill(); ctx.stroke();
         let rows = [
             ["LEVEL REACHED", level], ["ENEMIES DESTROYED", runKills], ["BEST COMBO", runBestCombo + "x"],
-            ["SCRAP EARNED", currentRunScrap], ["FINAL SCORE", Math.round(score)],
+            ["CLOSE CALLS", runGrazes], ["SCRAP EARNED", currentRunScrap], ["FINAL SCORE", Math.round(score)],
         ];
         ctx.font = "14px Courier New";
         rows.forEach(([label, val], i) => {

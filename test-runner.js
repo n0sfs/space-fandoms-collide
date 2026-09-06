@@ -65,7 +65,7 @@
     });
 
     ['easy', 'moderate', 'hard', 'insane'].forEach(diff => {
-        [1, 5, 7, 10, 14, 15, 20, 21, 25, 26, 55].forEach(lvl => {
+        [1, 5, 7, 10, 14, 15, 20, 21, 25, 26, 30, 35, 40].forEach(lvl => {
             test(`gameplay: ${diff} / level ${lvl}`, () => {
                 gameDifficulty = diff;
                 startGame('xwing'); level = lvl; startLevel();
@@ -89,9 +89,9 @@
 
     test('boss kill increments lifetime bossKills', () => {
         gameDifficulty = 'easy'; // deterministic spawn counts -- these scenario tests care about a clean 1v1, not difficulty scaling
-        startGame('xwing'); level = 55; startLevel(); // level 55: boss_carrier, no shield nodes to fight through
+        startGame('xwing'); level = 30; startLevel(); // level 30: boss_carrier, no shield nodes to fight through
         let boss = targets.find(t => t.type && t.type.startsWith('boss'));
-        if (!boss) throw new Error('no boss spawned at level 55');
+        if (!boss) throw new Error('no boss spawned at level 30');
         boss.hp = 1;
         // Escort asteroids/fighters can spawn alongside a boss -- isolate it so one can't drift
         // into the firing line and eat the shot meant for it.
@@ -119,9 +119,9 @@
         if (!unlockedAch['hive_breaker']) throw new Error('hive_breaker not unlocked');
     });
 
-    test('boss carrier spawns at level 55 and launches interceptors', () => {
+    test('boss carrier spawns at level 30 and launches interceptors', () => {
         gameDifficulty = 'easy';
-        startGame('xwing'); level = 55; startLevel();
+        startGame('xwing'); level = 30; startLevel();
         let boss = targets.find(t => t.type === 'boss_carrier');
         if (!boss) throw new Error('boss_carrier did not spawn');
         boss.launchTimer = 0.001;
@@ -130,11 +130,11 @@
         if (targets.length <= before) throw new Error('carrier did not launch fighters');
     });
 
-    test('boss worm spawns at level 65, grows a trail, and can be killed', () => {
+    test('boss worm spawns at level 40, grows a trail, and can be killed', () => {
         gameDifficulty = 'easy';
-        startGame('xwing'); level = 65; startLevel();
+        startGame('xwing'); level = 40; startLevel();
         let worm = targets.find(t => t.type === 'boss_worm');
-        if (!worm) throw new Error('boss_worm did not spawn at level 65');
+        if (!worm) throw new Error('boss_worm did not spawn at level 40');
         for (let f = 0; f < 20; f++) update(0.016);
         if (!worm.trail || worm.trail.length === 0) throw new Error('worm never grew a body trail');
         worm.hp = 1;
@@ -142,6 +142,100 @@
         mouse.leftDown = true; fireCooldown = 0;
         for (let f = 0; f < 20 && targets.includes(worm); f++) { mouse.x = worm.x; mouse.y = worm.y; positionShipNear(worm, 60); update(0.016); }
         if (lifetimeStats.bossKills <= before) throw new Error('worm kill did not register as a boss kill');
+    });
+
+    test('boss rotation keeps the classic campaign and starves no boss', () => {
+        let expected = { 5:'boss_station', 10:'boss_mothership', 15:'sentinel_swarm', 20:'boss_dreadnought', 25:'hive_swarm', 30:'boss_carrier', 40:'boss_worm' };
+        Object.keys(expected).forEach(l => {
+            let got = bossForLevel(+l);
+            if (got !== expected[l]) throw new Error('level ' + l + ' should be ' + expected[l] + ', got ' + got);
+        });
+        if (bossForLevel(35) !== null) throw new Error('level 35 is a hyperspace level and should have no boss');
+        // The old modulus chain let earlier rules starve later ones -- the worm got 2 appearances
+        // per 1000 levels and the carrier 4. Every boss should now land in the same ballpark.
+        let counts = {};
+        for (let l = 1; l <= 1000; l++) { let b = bossForLevel(l); if (b) counts[b] = (counts[b] || 0) + 1; }
+        if (Object.keys(counts).length !== 7) throw new Error('expected all 7 bosses, saw ' + Object.keys(counts).length);
+        if (Math.min(...Object.values(counts)) < 20) throw new Error('a boss is starved: ' + JSON.stringify(counts));
+    });
+
+    test('a Sentinel Swarm cannot end early or leak its queue into the next level', () => {
+        gameDifficulty = 'moderate';
+        startGame('viper'); level = 15; startLevel();
+        if (sentinelSpawnQueue <= 0) throw new Error('swarm queued no reinforcements');
+        targets = []; update(0.016);
+        if (gameState !== 'PLAYING') throw new Error('level ended while reinforcements were still inbound');
+        let guard = 0;
+        while (sentinelSpawnQueue > 0 && guard++ < 8000) { targets = []; update(0.016); }
+        targets = []; update(0.016);
+        if (gameState !== 'LEVEL_TRANSITION') throw new Error('level did not end once the queue drained');
+        gameState = 'PLAYING'; startLevel();
+        if (sentinelSpawnQueue !== 0) throw new Error('leftover sentinels leaked into the next level');
+    });
+
+    test('sentinels never outrun the hull the player picked', () => {
+        ['borg', 'enterprise', 'xwing', 'tiefighter'].forEach(id => {
+            startGame(id);
+            let sentinelPxs = sentinelChaseSpeed(2.5) * 60;   // roughly a level-15 speedMod
+            let playerPxs = playerTopSpeed();
+            if (sentinelPxs > Math.max(60, playerPxs)) throw new Error(id + ': sentinel ' + Math.round(sentinelPxs) + ' px/s outruns player ' + Math.round(playerPxs) + ' px/s');
+        });
+    });
+
+    test('a hacked boss keeps fighting instead of being frozen forever', () => {
+        gameDifficulty = 'easy';
+        startGame('fsociety'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        if (!boss) throw new Error('no boss at level 20');
+        targets = [boss]; boss.hp = 999999;
+        ship.x = boss.x - 150; ship.y = boss.y; mouse.x = boss.x; mouse.y = boss.y;
+        mouse.leftDown = true; fireCooldown = 0;
+        let sawEnemyFire = false;
+        for (let f = 0; f < 900 && !sawEnemyFire; f++) { update(0.016); if (enemyBullets.length > 0) sawEnemyFire = true; }
+        mouse.leftDown = false;
+        if (!sawEnemyFire) throw new Error('boss never got a shot off -- the hack stun-lock is back');
+    });
+
+    test('the worm is untouchable while burrowed and its body is solid when surfaced', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 40; startLevel();
+        let worm = targets.find(t => t.type === 'boss_worm');
+        if (!worm) throw new Error('boss_worm did not spawn');
+        targets = [worm];
+
+        worm.wormPhase = 'down'; worm.wormTimer = 99; worm.burrow = 1; worm.submerged = true;
+        let hpBefore = worm.hp;
+        ship.x = worm.x - 40; ship.y = worm.y; mouse.x = worm.x; mouse.y = worm.y;
+        mouse.leftDown = true; fireCooldown = 0;
+        for (let f = 0; f < 60; f++) update(0.016);
+        mouse.leftDown = false;
+        if (worm.hp < hpBefore) throw new Error('a burrowed worm still took damage');
+
+        // Surfaced, the trailing body has to hurt on contact even though only the head is shootable.
+        worm.wormPhase = 'up'; worm.wormTimer = 99; worm.burrow = 0; worm.submerged = false;
+        worm.x = 950; worm.y = 700;                       // park the head far from the ship
+        worm.trail = [{ x: 300, y: 300 }, { x: 340, y: 300 }];
+        ship.x = 300; ship.y = 300; ship.xv = 0; ship.yv = 0;
+        invulnTimer = 0; playerHp = playerMaxHp; playerShield = playerMaxShield;
+        update(0.016);
+        if (playerShield === playerMaxShield && playerHp === playerMaxHp) throw new Error('worm body segment dealt no contact damage');
+    });
+
+    test('a near miss scores a close call without damaging the player', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 3; startLevel();
+        // One far-off asteroid so the level does not complete mid-test.
+        targets = [{ type: 'asteroid', x: 60, y: 60, r: 20, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0 }];
+        enemyBullets = []; invulnTimer = 0;
+        ship.x = 500; ship.y = 400; ship.xv = 0; ship.yv = 0;
+        playerHp = playerMaxHp; playerShield = playerMaxShield;
+        let grazeBefore = runGrazes, scoreBefore = score;
+        // Passes ~30px off the hull: inside the graze band, well outside the hit radius.
+        enemyBullets.push({ x: 560, y: 400 + ship.r + 15, xv: -6, yv: 0, range: 400 });
+        for (let f = 0; f < 30 && runGrazes === grazeBefore; f++) update(0.016);
+        if (runGrazes <= grazeBefore) throw new Error('near miss did not register as a close call');
+        if (score <= scoreBefore) throw new Error('close call awarded no score');
+        if (playerHp < playerMaxHp || playerShield < playerMaxShield) throw new Error('a graze must not damage the player');
     });
 
     test('clearing a hyperspace anomaly untouched unlocks "untouchable"', () => {
@@ -216,12 +310,31 @@
         equipTrail('classic');
     });
 
-    test('ship select dropdown renders all 14 ships with stat bars', () => {
+    test('ship select dropdown renders all 14 ships, with an armour row only on slow hulls', () => {
         rebuildShipDropdown();
         let rows = document.querySelectorAll('.ship-option');
         if (rows.length !== 14) throw new Error('expected 14 ship options, found ' + rows.length);
-        let missingBars = Array.from(rows).some(r => r.querySelectorAll('.ship-stat-dot').length !== 10);
-        if (missingBars) throw new Error('one or more ship options is missing its stat bars');
+        rows.forEach(r => {
+            let id = r.getAttribute('data-ship');
+            let dots = r.querySelectorAll('.ship-stat-dot').length;
+            let hasArmour = !!r.querySelector('.ship-stat-label.armr');
+            let wantArmour = Math.round((1 - hullResilience(id).damageMult) * 100) >= 5;
+            if (dots !== (wantArmour ? 15 : 10)) throw new Error(id + ': expected ' + (wantArmour ? 15 : 10) + ' stat dots, found ' + dots);
+            if (hasArmour !== wantArmour) throw new Error(id + ': armour row presence disagrees with its resilience');
+        });
+    });
+
+    test('speed rating tracks real terminal velocity, not raw thrust', () => {
+        // The Borg has thrust 3 / fric 0.90 and the Enterprise thrust 4 / fric 0.95 -- close on
+        // paper, 3x apart in practice. Friction, not thrust, is what the rating has to reflect.
+        if (!(shipTopSpeed('borg') < shipTopSpeed('enterprise'))) throw new Error('borg should be the slower hull');
+        if (!(shipTopSpeed('tiefighter') > shipTopSpeed('xwing'))) throw new Error('TIE should outrun the X-Wing');
+        if (!isFinite(shipTopSpeed('apollo'))) throw new Error('apollo top speed must be bounded (fric < 1.0)');
+        // Slow hulls must actually receive the compensation, fast ones must not.
+        if (!(hullResilience('borg').damageMult < 0.7)) throw new Error('borg should get substantial damage resistance');
+        if (hullResilience('tiefighter').damageMult !== 1) throw new Error('fast hulls should get no damage resistance');
+        if (!(hullResilience('borg').shieldRegen > 0)) throw new Error('borg should regenerate shields');
+        if (hullResilience('tiefighter').shieldRegen !== 0) throw new Error('fast hulls should not regenerate shields');
     });
 
     // Clean up: leave the throwaway profile and go back to whatever was active before the run.
