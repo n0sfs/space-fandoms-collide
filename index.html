@@ -167,6 +167,32 @@
         .ship-btn { background: #222; color: white; border: 1px solid #555; padding: 10px 5px; font-size: 12px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .ship-btn:hover { background: #ffcc00; color: black; border-color: white; }
 
+        /* Alternate game modes */
+        .mode-row { display: flex; gap: 8px; margin-top: 8px; }
+        .mode-btn { flex: 1; padding: 8px 4px; font-size: 11px; border-color: #33ccff; color: #33ccff; background: rgba(51, 204, 255, 0.08); }
+        .mode-btn:hover:not(:disabled) { background: #33ccff; color: #000; border-color: #fff; }
+        .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: #555; color: #777; background: #1a1a1a; }
+        .mode-hint { font-size: 10px; color: #888; margin-top: 6px; min-height: 12px; letter-spacing: 0.5px; }
+
+        /* Mid-run perk choice */
+        #perkOverlay { width: min(94%, 640px); border-color: #33ff33; box-shadow: 0 0 24px #33ff33; }
+        .perk-heading { margin: 0 0 4px; color: #33ff33; font-size: 20px; letter-spacing: 1px; }
+        .perk-sub { font-size: 11px; color: #888; margin-bottom: 16px; }
+        .perk-list { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .perk-card {
+            flex: 1 1 170px; max-width: 200px; min-width: 150px; position: relative;
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+            background: #14180f; border: 1px solid #33ff33; border-radius: 8px; padding: 16px 10px 14px;
+            color: #eee; font-family: inherit; cursor: pointer; transition: 0.15s;
+        }
+        .perk-card:hover { background: #33ff33; color: #000; transform: translateY(-3px); }
+        .perk-key { position: absolute; top: 5px; left: 7px; font-size: 10px; color: #33ff33; border: 1px solid #33ff33; border-radius: 3px; padding: 0 4px; }
+        .perk-card:hover .perk-key { color: #000; border-color: #000; }
+        .perk-icon { font-size: 30px; line-height: 1; }
+        .perk-title { font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .perk-desc { font-size: 11px; color: #9c9; line-height: 1.35; }
+        .perk-card:hover .perk-desc { color: #063; }
+
         /* Ship Select Dropdown */
         .ship-select-wrap { position: relative; margin-bottom: 15px; }
         .ship-select-current {
@@ -361,6 +387,13 @@
             <div style="position: relative;">
                 <canvas id="gameCanvas" width="1000" height="750"></canvas>
 
+                <!-- Mid-run perk choice, shown after every boss level -->
+                <div id="perkOverlay" class="overlay hidden">
+                    <h2 class="perk-heading">BOSS DOWN &mdash; CHOOSE AN UPGRADE</h2>
+                    <div class="perk-sub">Press 1, 2 or 3 &mdash; or tap a card</div>
+                    <div id="perkList" class="perk-list"></div>
+                </div>
+
                 <!-- Main Menu -->
                 <div id="menuOverlay" class="overlay">
                     <h1>Space Fandoms Collide</h1>
@@ -387,6 +420,12 @@
                     </div>
 
                     <button class="ship-btn launch-btn" id="launchBtn">LAUNCH MISSION</button>
+
+                    <div class="mode-row">
+                        <button type="button" class="ship-btn mode-btn" id="bossRushBtn" title="Beat level 26 to unlock">&#9760; BOSS RUSH</button>
+                        <button type="button" class="ship-btn mode-btn" id="dailyBtn">&#128197; DAILY CHALLENGE</button>
+                    </div>
+                    <div class="mode-hint" id="modeHint"></div>
 
                     <button type="button" class="more-toggle-btn" id="moreToggleBtn">▾ MORE OPTIONS</button>
                     <div class="more-toggle-hint">🏆 Achievements · 📊 Pilot Record · 🛠️ Ship Builder · 🎨 Engine Trails · 🔊 Volume</div>

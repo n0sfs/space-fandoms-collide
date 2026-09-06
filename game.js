@@ -97,7 +97,7 @@ function resetRuntimeSaveState() {
     upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
     lastShipId = null;
     shipBuilderUnlocked = false;
-    lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0 };
+    lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0, bossRushBest: 0, bossRushWaves: 0 };
     unlockedAch = {};
     equippedTrail = "classic";
     customShipConfig = null;
@@ -183,7 +183,7 @@ let totalScrap = 0;
 let upgrades = { bombs: 0, speed: 0, shield: 0, power: 0 };
 let highScores = [];
 let lastShipId = null;
-let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0 };
+let lifetimeStats = { kills: 0, bossKills: 0, bombsUsed: 0, scrapEarned: 0, gamesPlayed: 0, highestLevel: 0, hyperspaceCleared: 0, bossRushBest: 0, bossRushWaves: 0 };
 let unlockedAch = {};
 let achievementToasts = [];
 let tookDamageThisHyperspace = false;
@@ -228,6 +228,7 @@ function unlockAchievement(id) {
     saveGameData();
     renderAchievementsList();
     renderTrailPicker();
+    if (typeof updateModeUI === "function") updateModeUI();
     achievementToasts.push({ icon: ach.icon, title: ach.title, life: 4.0 });
     playSfx('achievement');
 }
@@ -263,7 +264,11 @@ function renderPilotRecord() {
         ["Bombs Used", lifetimeStats.bombsUsed || 0],
         ["Lifetime Scrap Earned", lifetimeStats.scrapEarned || 0],
         ["Achievements Unlocked", `${Object.keys(unlockedAch).length}/${ACHIEVEMENTS.length}`],
+        ["Boss Rush Best Score", lifetimeStats.bossRushBest || 0],
+        ["Boss Rush Deepest Wave", lifetimeStats.bossRushWaves || 0],
     ];
+    let daily = loadDailyResult();
+    rows.push(["Today's Daily Challenge", daily ? `${daily.score} (L${daily.level})` : "not attempted"]);
     pilotRecordListEl.innerHTML = rows.map(([label, val]) => `<div class="record-row"><span>${label}</span><span>${val}</span></div>`).join('');
 }
 
@@ -335,6 +340,7 @@ function loadSaveData() {
             let p = JSON.parse(storedLifetime);
             lifetimeStats.kills = p.kills || 0; lifetimeStats.bossKills = p.bossKills || 0; lifetimeStats.bombsUsed = p.bombsUsed || 0; lifetimeStats.scrapEarned = p.scrapEarned || 0;
             lifetimeStats.gamesPlayed = p.gamesPlayed || 0; lifetimeStats.highestLevel = p.highestLevel || 0; lifetimeStats.hyperspaceCleared = p.hyperspaceCleared || 0;
+            lifetimeStats.bossRushBest = p.bossRushBest || 0; lifetimeStats.bossRushWaves = p.bossRushWaves || 0;
         }
         let storedAch = localStorage.getItem(pKey("sfc_achievements")); if (storedAch) unlockedAch = JSON.parse(storedAch);
         let storedTrail = localStorage.getItem(pKey("sfc_trailColor")); if (storedTrail && TRAIL_COLORS.some(t => t.id === storedTrail)) equippedTrail = storedTrail;
@@ -351,6 +357,7 @@ function loadSaveData() {
     renderTrailPicker();
     renderProfilesList();
     if (typeof updateBuilderUnlockUI === "function") updateBuilderUnlockUI();
+    if (typeof updateModeUI === "function") updateModeUI();
     if (lastShipId && typeof setMenuShip === "function") setMenuShip(lastShipId);
     maybeShowFirstRunHint();
 }
@@ -387,8 +394,33 @@ if(upgSpeedBtn) upgSpeedBtn.addEventListener("click", (e) => { e.preventDefault(
 if(upgShieldBtn) upgShieldBtn.addEventListener("click", (e) => { e.preventDefault(); if(totalScrap>=400 && upgrades.shield<5) { totalScrap-=400; upgrades.shield++; saveGameData(); playSfx('powerup'); }});
 if(upgPowerBtn) upgPowerBtn.addEventListener("click", (e) => { e.preventDefault(); if(totalScrap>=450 && upgrades.power<3) { totalScrap-=450; upgrades.power++; saveGameData(); playSfx('powerup'); }});
 
+// --- GAME MODES ---
+// campaign -- the normal level progression.
+// rush     -- every boss back to back, no filler levels, no hyperspace. Unlocked by beating L26.
+// daily    -- the campaign laid out from a date seed, so every pilot gets the same run today.
+let gameMode = "campaign";
+
+// mulberry32 + an FNV-1a string hash: enough to turn a date string into a reproducible sequence
+// without pulling in a dependency. Used only while a level is being laid out (see startLevel).
+function mulberry32(a) {
+    return function() {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+function hashString(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function todaySeedString() { let d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+let dailySeed = 0;
+
+// Run-scoped modifiers granted by the mid-run perk cards. All reset in startGame().
+let runFireRateMult = 1, runHeatMult = 1, runBonusDamage = 0;
+let runScrapMagnet = 1, runScrapMult = 1, runShieldRegen = 0, runComboHold = 1;
+let runPerksTaken = [];
+
 // --- GLOBAL GAME STATE ---
-let gameState = "MENU"; 
+let gameState = "MENU";
 let gameDifficulty = "moderate";
 let diffScoreMult = 1;
 let score = 0, level = 1, frames = 0;
@@ -540,7 +572,7 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; if (swarmBarEl) swarmBarEl.classList.add("hidden"); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -563,7 +595,15 @@ canvas.addEventListener("mousemove", (e) => { usingMouse = true; let rect = canv
 canvas.addEventListener("mousedown", (e) => { if (e.button === 0) mouse.leftDown = true; if (e.button === 2) mouse.rightDown = true; initAudio(); });
 canvas.addEventListener("mouseup", (e) => { if (e.button === 0) mouse.leftDown = false; if (e.button === 2) mouse.rightDown = false; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
-window.addEventListener("keydown", (e) => { keys[e.code] = true; if (e.code === "Space") e.preventDefault(); if (e.code === "KeyP") togglePause(); if (e.code === "KeyB") triggerNuke(); if (gameState === "GAMEOVER" && e.code === "KeyR") { if(menuOverlay) menuOverlay.classList.remove("hidden"); gameState = "MENU"; } });
+window.addEventListener("keydown", (e) => {
+    keys[e.code] = true;
+    if (e.code === "Space") e.preventDefault();
+    // Keyed off e.key rather than e.code so the number row, the numpad and soft keyboards all work.
+    if (gameState === "UPGRADE_CHOICE") { if (e.key >= "1" && e.key <= "3") chooseRunPerk(parseInt(e.key) - 1); return; }
+    if (e.code === "KeyP") togglePause();
+    if (e.code === "KeyB") triggerNuke();
+    if (gameState === "GAMEOVER" && e.code === "KeyR") { if(menuOverlay) menuOverlay.classList.remove("hidden"); gameState = "MENU"; if (typeof updateModeUI === "function") updateModeUI(); }
+});
 window.addEventListener("keyup", (e) => keys[e.code] = false);
 
 // --- TOUCH ---
@@ -849,7 +889,7 @@ function hullResilience(shipId, speedUpgrades = 0) {
 }
 function playerResilience() { return hullResilience(selectedShipType, upgrades.speed || 0); }
 function regenShields(dt) {
-    let regen = playerResilience().shieldRegen;
+    let regen = playerResilience().shieldRegen + runShieldRegen;
     if (regen > 0 && playerShield < playerMaxShield) playerShield = Math.min(playerMaxShield, playerShield + regen * dt);
 }
 
@@ -945,13 +985,38 @@ document.addEventListener("click", (e) => {
     }
 });
 
-if (launchBtn) {
-    const launchAction = (e) => {
-        if(e) e.preventDefault();
-        initAudio();
-        try { startGame(selectedShipType); } catch(err) { console.error("Start Game Error", err); }
-    };
-    launchBtn.addEventListener("click", launchAction); launchBtn.addEventListener("touchstart", launchAction, { passive: false });
+const bossRushBtn = document.getElementById("bossRushBtn");
+const dailyBtn = document.getElementById("dailyBtn");
+const modeHintEl = document.getElementById("modeHint");
+
+function launchMode(mode) {
+    initAudio();
+    try { startGame(selectedShipType, mode); } catch(err) { console.error("Start Game Error", err); }
+}
+function bindLaunch(btn, mode) {
+    if (!btn) return;
+    const act = (e) => { if(e) e.preventDefault(); if (btn.disabled) return; launchMode(mode); };
+    btn.addEventListener("click", act); btn.addEventListener("touchstart", act, { passive: false });
+}
+bindLaunch(launchBtn, "campaign");
+bindLaunch(bossRushBtn, "rush");
+bindLaunch(dailyBtn, "daily");
+
+// Boss Rush is the reward for finishing the campaign, so it stays locked until level 26 is beaten.
+function updateModeUI() {
+    let rushUnlocked = !!unlockedAch['level_26'];
+    if (bossRushBtn) {
+        bossRushBtn.disabled = !rushUnlocked;
+        bossRushBtn.textContent = rushUnlocked ? "☠ BOSS RUSH" : "☠ BOSS RUSH (LOCKED)";
+        bossRushBtn.title = rushUnlocked ? "Every boss, back to back" : "Beat level 26 to unlock";
+    }
+    if (modeHintEl) {
+        let daily = typeof loadDailyResult === "function" ? loadDailyResult() : null;
+        let parts = [];
+        parts.push(rushUnlocked ? "Boss Rush: every boss, back to back" : "Boss Rush unlocks at level 26");
+        parts.push(daily ? `Today's daily best: ${daily.score}` : `Daily seed ${todaySeedString()} — same run for every pilot`);
+        modeHintEl.textContent = parts.join("  ·  ");
+    }
 }
 
 setMenuShip(selectedShipType);
@@ -1663,12 +1728,99 @@ function damagePlayer(amt) {
             spawnText(canvas.width/2, canvas.height/2, `${lives} ${lives === 1 ? "SHIP" : "SHIPS"} REMAINING`, "#ffcc00", 18);
             updateUI();
         }
-        else { lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]); totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap; checkAndSaveScore(); saveGameData(); gameOverMessage = ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]; gameState = "GAMEOVER"; }
+        else {
+            lives = 0; playerHp = 0; playerShield = 0; updateUI(); vibrate([100, 50, 100]);
+            totalScrap += currentRunScrap; lifetimeStats.scrapEarned += currentRunScrap;
+            checkAndSaveScore();
+            // Mode-specific records, kept alongside the shared leaderboard.
+            if (gameMode === "rush") {
+                if (score > (lifetimeStats.bossRushBest || 0)) lifetimeStats.bossRushBest = Math.round(score);
+                if (level > (lifetimeStats.bossRushWaves || 0)) lifetimeStats.bossRushWaves = level;
+            } else if (gameMode === "daily") {
+                saveDailyResult(score, level);
+            }
+            saveGameData();
+            gameOverMessage = ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]; gameState = "GAMEOVER";
+        }
     }
     updateUI();
 }
 
-function startGame(shipId) {
+// --- MID-RUN PERKS ---
+// Clearing a boss level offers a choice of three upgrades. A boss kill used to be nothing but a
+// score spike; this gives each run its own build-up arc and makes repeat runs diverge.
+const RUN_PERKS = [
+    { id: "plating",  icon: "\u{1F6E1}", title: "Ablative Plating",  desc: "+30 max shield, refilled now", apply: () => { playerMaxShield += 30; playerShield = playerMaxShield; } },
+    { id: "hull",     icon: "\u{1F527}", title: "Reinforced Hull",   desc: "+25 max hull, fully repaired", apply: () => { playerMaxHp += 25; playerHp = playerMaxHp; } },
+    { id: "coils",    icon: "\u{26A1}",  title: "Overclocked Coils", desc: "Fire 15% faster",              apply: () => { runFireRateMult *= 0.85; } },
+    { id: "coolant",  icon: "\u{2744}",  title: "Coolant Injectors", desc: "25% less heat per shot",       apply: () => { runHeatMult *= 0.75; } },
+    { id: "emitter",  icon: "\u{1F4A5}", title: "Focused Emitters",  desc: "+1 damage per shot",           apply: () => { runBonusDamage += 1; } },
+    { id: "warhead",  icon: "\u{1F4A3}", title: "Spare Warheads",    desc: "+2 logic bombs",               apply: () => { bombs += 2; } },
+    { id: "magnet",   icon: "\u{1F9F2}", title: "Scrap Magnet",      desc: "Wider pickup, +50% scrap",     apply: () => { runScrapMagnet *= 1.8; runScrapMult *= 1.5; } },
+    { id: "airframe", icon: "\u{1F680}", title: "Spare Airframe",    desc: "+1 ship",                      apply: () => { lives++; } },
+    { id: "recycler", icon: "\u{1F50B}", title: "Shield Recycler",   desc: "+3 shield regen per second",   apply: () => { runShieldRegen += 3; } },
+    { id: "streak",   icon: "\u{1F525}", title: "Killstreak Logic",  desc: "Combo lasts twice as long",    apply: () => { runComboHold *= 2; } },
+];
+
+let perkChoices = [];
+const perkOverlay = document.getElementById("perkOverlay");
+const perkListEl = document.getElementById("perkList");
+
+function offerRunPerks() {
+    // Deal three distinct perks. Stacking the same perk across a run is the point, but the same
+    // card must not appear twice in one hand.
+    let pool = RUN_PERKS.slice();
+    perkChoices = [];
+    for (let i = 0; i < 3 && pool.length; i++) perkChoices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    if (!perkOverlay || !perkListEl) { finishRunPerks(); return; }
+    perkListEl.innerHTML = perkChoices.map((p, i) => `
+        <button type="button" class="perk-card" data-perk="${i}">
+            <span class="perk-key">${i + 1}</span>
+            <span class="perk-icon">${p.icon}</span>
+            <span class="perk-title">${p.title}</span>
+            <span class="perk-desc">${p.desc}</span>
+        </button>`).join("");
+    perkListEl.querySelectorAll(".perk-card").forEach(btn => {
+        const pick = (e) => { if (e) e.preventDefault(); initAudio(); chooseRunPerk(parseInt(btn.getAttribute("data-perk"))); };
+        btn.addEventListener("click", pick); btn.addEventListener("touchstart", pick, { passive: false });
+    });
+    perkOverlay.classList.remove("hidden");
+    gameState = "UPGRADE_CHOICE";
+}
+
+function chooseRunPerk(i) {
+    if (gameState !== "UPGRADE_CHOICE") return;
+    let p = perkChoices[i];
+    if (!p) return;
+    p.apply();
+    runPerksTaken.push(p.id);
+    playSfx('powerup');
+    spawnText(canvas.width/2, canvas.height/2 - 60, p.title.toUpperCase(), "#33ff33", 22);
+    finishRunPerks();
+}
+
+function finishRunPerks() {
+    if (perkOverlay) perkOverlay.classList.add("hidden");
+    updateUI();
+    gameState = "LEVEL_TRANSITION"; hyperspace = 0;
+}
+
+// --- DAILY CHALLENGE RECORD ---
+function loadDailyResult() {
+    try {
+        let raw = localStorage.getItem(pKey("sfc_daily"));
+        if (!raw) return null;
+        let d = JSON.parse(raw);
+        return d && d.date === todaySeedString() ? d : null;
+    } catch(e) { return null; }
+}
+function saveDailyResult(finalScore, reachedLevel) {
+    let prev = loadDailyResult();
+    if (prev && prev.score >= finalScore) return;
+    try { localStorage.setItem(pKey("sfc_daily"), JSON.stringify({ date: todaySeedString(), score: Math.round(finalScore), level: reachedLevel })); } catch(e) {}
+}
+
+function startGame(shipId, mode) {
     let nameVal = "AAA"; if (playerNameInput && playerNameInput.value) { nameVal = playerNameInput.value.trim().toUpperCase(); } if(nameVal.length < 1) nameVal = "AAA";
     currentPlayerName = nameVal; selectedShipType = (ShipDesigns[shipId]) ? shipId : "xwing";
     try { localStorage.setItem(pKey("sfc_lastShip"), selectedShipType); } catch(e) {}
@@ -1677,8 +1829,18 @@ function startGame(shipId) {
     if (menuOverlay) menuOverlay.classList.add("hidden");
     if (pauseOverlay) pauseOverlay.classList.add("hidden");
 
+    gameMode = (mode === "rush" || mode === "daily") ? mode : "campaign";
+    if (gameMode === "daily") dailySeed = hashString(todaySeedString());
+    // Perk modifiers are strictly run-scoped -- nothing here survives into the next run.
+    runFireRateMult = 1; runHeatMult = 1; runBonusDamage = 0;
+    runScrapMagnet = 1; runScrapMult = 1; runShieldRegen = 0; runComboHold = 1; runPerksTaken = [];
+    if (perkOverlay) perkOverlay.classList.add("hidden");
+
     score = 0; level = 1; currentRunScrap = 0; lives = 3;
+    playerMaxHp = 100;
     diffScoreMult = gameDifficulty === "easy" ? 0.75 : gameDifficulty === "hard" ? 1.35 : gameDifficulty === "insane" ? 1.75 : 1.0;
+    // Boss Rush is nothing but boss fights, so it pays a premium over the campaign's mixed pacing.
+    if (gameMode === "rush") diffScoreMult *= 1.3;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
     combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0;
@@ -1714,6 +1876,64 @@ function bossForLevel(level) {
     return BOSS_ROTATION[(bossLevelsSoFar - 1) % BOSS_ROTATION.length];
 }
 
+// Spawns one boss encounter. Split out of startLevel() so Boss Rush can stage the same fights
+// back to back without the filler levels in between.
+function spawnBossEncounter(bossKind, diffMult, speedMod) {
+    if (bossKind === "sentinel_swarm") {
+        // Trickle the swarm in instead of dumping the whole roster on the player at once --
+        // an initial wave, then the rest arrive gradually (see the update() loop).
+        let numSentinels = Math.floor(32 * diffMult);
+        let initialWave = Math.min(6, numSentinels);
+        for (let i = 0; i < initialWave; i++) spawnTarget("sentinel", 12, speedMod * 1.0);
+        sentinelSpawnQueue = numSentinels - initialWave;
+        sentinelSpeedMod = speedMod;
+        sentinelSpawnTimer = 1.2;
+    } else if (bossKind === "hive_swarm") {
+        let numMinions = Math.floor((12 + level * 0.3) * diffMult);
+        let queenIndex = Math.floor(Math.random() * numMinions);
+        for (let i = 0; i < numMinions; i++) {
+            let ang = (i / numMinions) * Math.PI * 2;
+            let dist = 250 + Math.random() * 60;
+            let sx = canvas.width/2 + Math.cos(ang) * dist;
+            let sy = canvas.height/2 + Math.sin(ang) * dist;
+            spawnTarget("hive_minion", i === queenIndex ? 20 : 13, speedMod * 1.1, sx, sy);
+            let m = targets[targets.length - 1];
+            if (i === queenIndex) { m.isQueen = true; m.hp = Math.floor((10 + level * 0.5) * diffMult); m.maxHp = m.hp; }
+            else { m.hp = 1; m.maxHp = 1; }
+        }
+        hiveSwarmActive = true; hiveSwarmTotal = numMinions; hiveFireTimer = 2.5; hiveEnraged = false;
+        spawnText(canvas.width/2, canvas.height/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
+    } else if (bossKind === "boss_dreadnought") {
+        let bossR = 90 + (level * 1.0); spawnTarget("boss_dreadnought", bossR, speedMod * 0.15);
+        let boss = targets[targets.length - 1];
+        boss.maxHp = Math.floor((40 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.5 / diffMult; boss.broadsideTimer = 3.0;
+    } else if (bossKind === "boss_mothership") {
+        let bossR = 80 + (level * 1.2); spawnTarget("boss_mothership", bossR, speedMod * 0.2);
+        let boss = targets[targets.length - 1];
+        boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
+        boss.nodes = [{ang: 0, hp: 4}, {ang: Math.PI/2, hp: 4}, {ang: Math.PI, hp: 4}, {ang: Math.PI*1.5, hp: 4}];
+    } else if (bossKind === "boss_carrier") {
+        let bossR = 85 + (level * 1.1); spawnTarget("boss_carrier", bossR, speedMod * 0.15);
+        let boss = targets[targets.length - 1];
+        boss.maxHp = Math.floor((50 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.launchTimer = 3.0;
+    } else if (bossKind === "boss_worm") {
+        let bossR = 46; spawnTarget("boss_worm", bossR, speedMod * 0.4);
+        let boss = targets[targets.length - 1];
+        boss.maxHp = Math.floor((70 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
+        boss.trail = []; boss.wiggle = Math.random() * Math.PI * 2;
+        // Burrow cycle: it surfaces to hunt, then submerges (invulnerable, harmless, and
+        // clearly telegraphed) before erupting again near the player.
+        boss.wormPhase = "up"; boss.wormTimer = 9.0; boss.burrow = 0;
+        spawnText(canvas.width/2, canvas.height/2 - 20, "SOMETHING MOVES BENEATH", "#88cc44", 24);
+        spawnText(canvas.width/2, canvas.height/2 + 16, "ONLY THE HEAD IS VULNERABLE", "#ffcc00", 15);
+    } else {
+        let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
+        let boss = targets[targets.length - 1];
+        boss.maxHp = Math.floor((20 + (level * 4)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.0 / diffMult; boss.chargeTimer = 0;
+        for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40 + Math.random()*20, speedMod);
+    }
+}
+
 function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
@@ -1721,19 +1941,20 @@ function startLevel() {
     sentinelSpawnQueue = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
-    if (level > lifetimeStats.highestLevel) lifetimeStats.highestLevel = level;
-    if (level === 10) unlockAchievement('level_10');
-    if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
-
-    if (level === 20 && !shipBuilderUnlocked) {
-        shipBuilderUnlocked = true;
-        try { localStorage.setItem(pKey("sfc_shipBuilderUnlocked"), "1"); } catch(e) {}
-        updateBuilderUnlockUI();
-        spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
-        unlockAchievement('level_20');
+    if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
+    if (gameMode === "campaign") {
+        if (level === 10) unlockAchievement('level_10');
+        if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
+        if (level === 20 && !shipBuilderUnlocked) {
+            shipBuilderUnlocked = true;
+            try { localStorage.setItem(pKey("sfc_shipBuilderUnlocked"), "1"); } catch(e) {}
+            updateBuilderUnlockUI();
+            spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
+            unlockAchievement('level_20');
+        }
     }
 
-    is3DMode = (level % 7 === 0);
+    is3DMode = (gameMode !== "rush") && (level % 7 === 0);
     hiveSwarmActive = false;
 
     if (is3DMode) {
@@ -1749,61 +1970,19 @@ function startLevel() {
     else if (gameDifficulty === "insane") { diffMult = 2.0; speedMult = 1.6; }
     let speedMod = speedMult + (level * 0.1 * speedMult);
 
-    if (level % 5 === 0 && !is3DMode) {
-        let bossKind = bossForLevel(level);
-        if (bossKind === "sentinel_swarm") {
-            // Trickle the swarm in instead of dumping the whole roster on the player at once --
-            // an initial wave, then the rest arrive gradually (see the update() loop).
-            let numSentinels = Math.floor(32 * diffMult);
-            let initialWave = Math.min(6, numSentinels);
-            for (let i = 0; i < initialWave; i++) spawnTarget("sentinel", 12, speedMod * 1.0);
-            sentinelSpawnQueue = numSentinels - initialWave;
-            sentinelSpeedMod = speedMod;
-            sentinelSpawnTimer = 1.2;
-        } else if (bossKind === "hive_swarm") {
-            let numMinions = Math.floor((12 + level * 0.3) * diffMult);
-            let queenIndex = Math.floor(Math.random() * numMinions);
-            for (let i = 0; i < numMinions; i++) {
-                let ang = (i / numMinions) * Math.PI * 2;
-                let dist = 250 + Math.random() * 60;
-                let sx = canvas.width/2 + Math.cos(ang) * dist;
-                let sy = canvas.height/2 + Math.sin(ang) * dist;
-                spawnTarget("hive_minion", i === queenIndex ? 20 : 13, speedMod * 1.1, sx, sy);
-                let m = targets[targets.length - 1];
-                if (i === queenIndex) { m.isQueen = true; m.hp = Math.floor((10 + level * 0.5) * diffMult); m.maxHp = m.hp; }
-                else { m.hp = 1; m.maxHp = 1; }
-            }
-            hiveSwarmActive = true; hiveSwarmTotal = numMinions; hiveFireTimer = 2.5; hiveEnraged = false;
-            spawnText(canvas.width/2, canvas.height/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
-        } else if (bossKind === "boss_dreadnought") {
-            let bossR = 90 + (level * 1.0); spawnTarget("boss_dreadnought", bossR, speedMod * 0.15);
-            let boss = targets[targets.length - 1];
-            boss.maxHp = Math.floor((40 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.5 / diffMult; boss.broadsideTimer = 3.0;
-        } else if (bossKind === "boss_mothership") {
-            let bossR = 80 + (level * 1.2); spawnTarget("boss_mothership", bossR, speedMod * 0.2);
-            let boss = targets[targets.length - 1];
-            boss.maxHp = Math.floor((30 + (level * 5)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
-            boss.nodes = [{ang: 0, hp: 4}, {ang: Math.PI/2, hp: 4}, {ang: Math.PI, hp: 4}, {ang: Math.PI*1.5, hp: 4}];
-        } else if (bossKind === "boss_carrier") {
-            let bossR = 85 + (level * 1.1); spawnTarget("boss_carrier", bossR, speedMod * 0.15);
-            let boss = targets[targets.length - 1];
-            boss.maxHp = Math.floor((50 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.launchTimer = 3.0;
-        } else if (bossKind === "boss_worm") {
-            let bossR = 46; spawnTarget("boss_worm", bossR, speedMod * 0.4);
-            let boss = targets[targets.length - 1];
-            boss.maxHp = Math.floor((70 + (level * 6)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0;
-            boss.trail = []; boss.wiggle = Math.random() * Math.PI * 2;
-            // Burrow cycle: it surfaces to hunt, then submerges (invulnerable, harmless, and
-            // clearly telegraphed) before erupting again near the player.
-            boss.wormPhase = "up"; boss.wormTimer = 9.0; boss.burrow = 0;
-            spawnText(canvas.width/2, canvas.height/2 - 20, "SOMETHING MOVES BENEATH", "#88cc44", 24);
-            spawnText(canvas.width/2, canvas.height/2 + 16, "ONLY THE HEAD IS VULNERABLE", "#ffcc00", 15);
-        } else {
-            let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
-            let boss = targets[targets.length - 1];
-            boss.maxHp = Math.floor((20 + (level * 4)) * diffMult); boss.hp = boss.maxHp; boss.hitFlash = 0; boss.spawnTimer = 2.0 / diffMult; boss.chargeTimer = 0;
-            for (let i = 0; i < Math.floor(3 * diffMult); i++) spawnTarget("asteroid", 40 + Math.random()*20, speedMod);
-        }
+    // Daily Challenge: reseed the RNG per level so a layout depends only on the date and the
+    // level number. Seeding per level rather than per run means the player's own actions --
+    // particle spawns, sfx jitter -- can't drift the sequence out from under them mid-run.
+    let restoreRandom = null;
+    if (gameMode === "daily") { restoreRandom = Math.random; Math.random = mulberry32(dailySeed + level * 7919); }
+
+    if (gameMode === "rush") {
+        // Boss Rush: every boss back to back, no filler, no hyperspace. Difficulty keeps
+        // climbing with the wave number via the shared speedMod/diffMult curve.
+        spawnBossEncounter(BOSS_ROTATION[(level - 1) % BOSS_ROTATION.length], diffMult, speedMod);
+        spawnText(canvas.width/2, 80, "WAVE " + level, "#ffcc00", 24);
+    } else if (level % 5 === 0 && !is3DMode) {
+        spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
     } else {
         let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
         for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
@@ -1819,6 +1998,7 @@ function startLevel() {
             for(let i=0; i<numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.2);
         }
     }
+    if (restoreRandom) Math.random = restoreRandom;
     updateUI();
 }
 
@@ -1887,7 +2067,7 @@ function update3D(dt) {
             bullets3D.push({ x: camX - 30, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
             bullets3D.push({ x: camX + 30, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
         }
-        fireCooldown = stats.fireRate; heat += stats.heat; 
+        fireCooldown = stats.fireRate * runFireRateMult; heat += stats.heat * runHeatMult;
         if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(canvas.width/2, canvas.height/2+50, "OVERHEAT", "#ff0000", 18); }
         updateUI();
     }
@@ -1929,10 +2109,10 @@ function update3D(dt) {
         for(let j=bullets3D.length-1; j>=0; j--) {
             let b = bullets3D[j];
             if (Math.abs(b.z - t.z) < 150 && Math.hypot(b.x - t.x, b.y - t.y) < t.r + 20) {
-                let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0);
+                let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0) + runBonusDamage;
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
-                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++; runKills++;
+                    playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
                     score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
                 }
             }
@@ -1978,7 +2158,7 @@ function update(dt) {
             bullets.push(b1); bullets.push(b2);
         }
         ShipDesigns[selectedShipType].fire();
-        fireCooldown = stats.fireRate * (rapidFireTimer > 0 ? 0.5 : 1); heat += stats.heat;
+        fireCooldown = stats.fireRate * (rapidFireTimer > 0 ? 0.5 : 1) * runFireRateMult; heat += stats.heat * runHeatMult;
         if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(ship.x, ship.y-20, "OVERHEAT", "#ff0000", 18); }
         updateUI();
     }
@@ -2015,8 +2195,8 @@ function update(dt) {
         let s = scrapDrops[i]; s.x += s.xv; s.y += s.yv; s.life -= dt; 
         if(s.life <= 0) { scrapDrops.splice(i,1); continue; }
         let dist = Math.hypot(ship.x - s.x, ship.y - s.y);
-        if(dist < 100) { s.x += (ship.x - s.x)*5*dt; s.y += (ship.y - s.y)*5*dt; }
-        if(dist < ship.r + 10) { currentRunScrap += 10; playSfx('scrap'); spawnText(s.x, s.y, "+10", "#ff00ff", 12); scrapDrops.splice(i,1); updateUI(); }
+        if(dist < 100 * runScrapMagnet) { s.x += (ship.x - s.x)*5*dt; s.y += (ship.y - s.y)*5*dt; }
+        if(dist < ship.r + 10) { let gain = Math.round(10 * runScrapMult); currentRunScrap += gain; playSfx('scrap'); spawnText(s.x, s.y, "+" + gain, "#ff00ff", 12); scrapDrops.splice(i,1); updateUI(); }
     }
 
     for (let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.xv; p.y += p.yv; p.life -= dt * 2.0; if (p.isEmp) p.size += dt * 800; if (p.life <= 0) particles.splice(i, 1); }
@@ -2200,7 +2380,7 @@ function update(dt) {
         for (let j = targets.length - 1; j >= 0; j--) {
             let t = targets[j];
             if (t.type === "boss_worm" && t.submerged) continue;   // untouchable while it's burrowed
-            let dmg = (bullets[i].isEmpBolt ? 2 : (selectedShipType === 'enterprise' ? 2 : 1)) + (upgrades.power || 0);
+            let dmg = (bullets[i].isEmpBolt ? 2 : (selectedShipType === 'enterprise' ? 2 : 1)) + (upgrades.power || 0) + runBonusDamage;
 
             if (t.type === "boss_mothership") {
                 let hitNode = false; let allDead = true;
@@ -2232,7 +2412,7 @@ function update(dt) {
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
                 spawnParticles(t.x, t.y, (t.type==="asteroid"||t.type==="satellite") ? "#aaa" : "#ff5500", t.r > 30 ? 30 : 15);
                 spawnText(t.x, t.y, "DESTROYED", "#ff0000");
-                combo++; if(combo>10) combo=10; comboTimer = 4.0; lifetimeStats.kills++; runKills++;
+                combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
 
                 let diffMod = 1 + (level * 0.1);
                 if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
@@ -2286,7 +2466,11 @@ function update(dt) {
     // clear -- ending the level here used to complete it after only the opening wave and spill
     // the remaining queue into the next level.
     if (targets.length === 0 && sentinelSpawnQueue === 0 && gameState === "PLAYING") {
-        level++; updateUI(); gameState = "LEVEL_TRANSITION"; bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup');
+        let clearedABoss = (gameMode === "rush") || (level % 5 === 0 && !is3DMode);
+        level++; updateUI(); bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup');
+        // Surviving a boss earns a build choice rather than just a score spike.
+        if (clearedABoss) { offerRunPerks(); return; }
+        gameState = "LEVEL_TRANSITION";
     }
 }
 
@@ -2595,7 +2779,7 @@ function render() {
         ctx.restore();
     });
 
-    if (gameState === "PLAYING" || gameState === "LEVEL_TRANSITION" || gameState === "PAUSED") {
+    if (gameState === "PLAYING" || gameState === "LEVEL_TRANSITION" || gameState === "PAUSED" || gameState === "UPGRADE_CHOICE") {
         if (invulnTimer <= 0 || frames % 10 < 5) {
             let chaosScale = chaosTimer > 0 ? 1 + Math.sin(frames * 0.3) * 0.25 : 1;
             ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.angle); ctx.scale(chaosScale, chaosScale); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
@@ -2637,15 +2821,20 @@ function drawMenuOverlays() {
     if (gameState === "GAMEOVER") {
         ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         let cx = canvas.width / 2, cy = canvas.height / 2;
+        if (gameMode !== "campaign") {
+            ctx.fillStyle = "#33ccff"; ctx.font = "bold 13px Courier New";
+            ctx.fillText(gameMode === "rush" ? "☠ BOSS RUSH" : "\u{1F4C5} DAILY CHALLENGE · " + todaySeedString(), cx, cy - 162);
+        }
         ctx.fillStyle = "#ffcc00"; ctx.font = "bold 44px Courier New"; ctx.fillText("GAME OVER", cx, cy - 130);
         ctx.fillStyle = "#33ccff"; ctx.font = "bold 18px Courier New"; ctx.fillText(gameOverMessage || "NICE FLYING, PILOT!", cx, cy - 95);
 
-        let panelW = 320, panelH = 174, px = cx - panelW/2, py = cy - 65;
+        let panelW = 320, panelH = 198, px = cx - panelW/2, py = cy - 65;
         ctx.fillStyle = "rgba(20, 20, 24, 0.9)"; ctx.strokeStyle = "#444"; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.roundRect(px, py, panelW, panelH, 8); ctx.fill(); ctx.stroke();
         let rows = [
-            ["LEVEL REACHED", level], ["ENEMIES DESTROYED", runKills], ["BEST COMBO", runBestCombo + "x"],
-            ["CLOSE CALLS", runGrazes], ["SCRAP EARNED", currentRunScrap], ["FINAL SCORE", Math.round(score)],
+            [gameMode === "rush" ? "WAVE REACHED" : "LEVEL REACHED", level], ["ENEMIES DESTROYED", runKills], ["BEST COMBO", runBestCombo + "x"],
+            ["CLOSE CALLS", runGrazes], ["UPGRADES TAKEN", runPerksTaken.length],
+            ["SCRAP EARNED", currentRunScrap], ["FINAL SCORE", Math.round(score)],
         ];
         ctx.font = "14px Courier New";
         rows.forEach(([label, val], i) => {
@@ -2655,6 +2844,6 @@ function drawMenuOverlays() {
         });
         ctx.textAlign = "center";
 
-        ctx.fillStyle = "white"; ctx.font = "16px Courier New"; ctx.fillText("Press 'R' to return", cx, cy + 115);
+        ctx.fillStyle = "white"; ctx.font = "16px Courier New"; ctx.fillText("Press 'R' to return", cx, cy + 158);
     }
 }

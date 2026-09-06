@@ -168,7 +168,10 @@
         let guard = 0;
         while (sentinelSpawnQueue > 0 && guard++ < 8000) { targets = []; update(0.016); }
         targets = []; update(0.016);
-        if (gameState !== 'LEVEL_TRANSITION') throw new Error('level did not end once the queue drained');
+        // A Sentinel Swarm is a boss level, so clearing it lands on the perk choice first.
+        if (gameState !== 'UPGRADE_CHOICE') throw new Error('level did not end once the queue drained (state: ' + gameState + ')');
+        chooseRunPerk(0);
+        if (gameState !== 'LEVEL_TRANSITION') throw new Error('choosing a perk did not resume the run');
         gameState = 'PLAYING'; startLevel();
         if (sentinelSpawnQueue !== 0) throw new Error('leftover sentinels leaked into the next level');
     });
@@ -308,6 +311,87 @@
         equipTrail('rainbow');
         if (equippedTrail !== 'rainbow') throw new Error('an unlocked trail color failed to equip');
         equipTrail('classic');
+    });
+
+    test('clearing a boss level offers three distinct perks that actually apply', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 5; startLevel();
+        targets = []; sentinelSpawnQueue = 0;
+        update(0.016);
+        if (gameState !== 'UPGRADE_CHOICE') throw new Error('clearing a boss level did not offer perks');
+        if (perkChoices.length !== 3) throw new Error('expected 3 perk choices, got ' + perkChoices.length);
+        if (new Set(perkChoices.map(p => p.id)).size !== 3) throw new Error('the same perk was dealt twice in one hand');
+        // Pick a perk with an effect we can assert on, rather than whatever chance dealt.
+        perkChoices[0] = RUN_PERKS.find(p => p.id === 'emitter');
+        let dmgBefore = runBonusDamage;
+        chooseRunPerk(0);
+        if (runBonusDamage !== dmgBefore + 1) throw new Error('perk did not apply its effect');
+        if (runPerksTaken.length !== 1) throw new Error('perk was not recorded on the run');
+        if (gameState !== 'LEVEL_TRANSITION') throw new Error('choosing a perk did not resume the run');
+        if (perkOverlay && !perkOverlay.classList.contains('hidden')) throw new Error('perk overlay stayed open');
+    });
+
+    test('a non-boss level does not offer perks', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 3; startLevel();
+        targets = []; sentinelSpawnQueue = 0;
+        update(0.016);
+        if (gameState === 'UPGRADE_CHOICE') throw new Error('an ordinary level offered a perk choice');
+    });
+
+    test('run perk modifiers are scoped to the run and reset on the next one', () => {
+        startGame('xwing');
+        RUN_PERKS.forEach(p => p.apply());          // take everything at once
+        if (runBonusDamage === 0 || runFireRateMult === 1 || runShieldRegen === 0) throw new Error('perks did not modify run state');
+        startGame('xwing');
+        if (runBonusDamage !== 0 || runFireRateMult !== 1 || runHeatMult !== 1) throw new Error('perk modifiers leaked into the next run');
+        if (runScrapMult !== 1 || runShieldRegen !== 0 || runComboHold !== 1) throw new Error('perk modifiers leaked into the next run');
+        if (runPerksTaken.length !== 0) throw new Error('perk list leaked into the next run');
+        if (playerMaxHp !== 100) throw new Error('max hull leaked into the next run');
+    });
+
+    test('boss rush stages a boss every wave with no filler or hyperspace', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing', 'rush');
+        if (gameMode !== 'rush') throw new Error('rush mode did not engage');
+        let seen = new Set();
+        for (let wave = 1; wave <= 7; wave++) {
+            level = wave; startLevel();
+            if (is3DMode) throw new Error('wave ' + wave + ' fell into hyperspace');
+            let hasEncounter = targets.length > 0 || sentinelSpawnQueue > 0;
+            if (!hasEncounter) throw new Error('wave ' + wave + ' spawned no encounter');
+            seen.add(BOSS_ROTATION[(wave - 1) % BOSS_ROTATION.length]);
+        }
+        if (seen.size !== 7) throw new Error('the first 7 waves should cover all 7 bosses, saw ' + seen.size);
+    });
+
+    test('the daily challenge lays out the same levels for the same seed', () => {
+        gameDifficulty = 'moderate';
+        const layout = () => {
+            startGame('xwing', 'daily');
+            level = 6; startLevel();
+            return targets.map(t => `${t.type}@${Math.round(t.x)},${Math.round(t.y)},${Math.round(t.r)}`).join('|');
+        };
+        let a = layout(), b = layout();
+        if (a !== b) throw new Error('two daily runs on the same seed produced different layouts');
+        if (!a) throw new Error('daily run spawned nothing to compare');
+        // A different seed must actually produce a different layout, or the seeding is a no-op.
+        startGame('xwing', 'daily'); dailySeed = dailySeed + 12345;
+        level = 6; startLevel();
+        let c = targets.map(t => `${t.type}@${Math.round(t.x)},${Math.round(t.y)},${Math.round(t.r)}`).join('|');
+        if (c === a) throw new Error('changing the seed did not change the layout');
+        // Math.random must be handed back after the layout, not left seeded for the whole run.
+        let r1 = Math.random(), r2 = Math.random();
+        if (r1 === r2) throw new Error('Math.random was left seeded after level layout');
+    });
+
+    test('campaign mode is unaffected by the daily seeding path', () => {
+        gameDifficulty = 'moderate';
+        startGame('xwing', 'campaign');
+        if (gameMode !== 'campaign') throw new Error('campaign mode did not engage');
+        let native = Math.random;
+        level = 6; startLevel();
+        if (Math.random !== native) throw new Error('campaign level layout replaced Math.random');
     });
 
     test('ship select dropdown renders all 14 ships, with an armour row only on slow hulls', () => {

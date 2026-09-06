@@ -8,7 +8,14 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **14 Unique Ships:** Pilot everything from an X-Wing and the Millennium Falcon to the TARDIS, the Nebuchadnezzar, and a glitching fsociety terminal.
 * **Custom Flight & Weapon Physics:** Every ship has unique stats (Thrust, Friction, Fire Rate) and weapons (e.g., EMP blasts, shotgun lasers, light ribbons, and quad-blasters).
 * **Four Difficulty Tiers:** Easy, Moderate, Hard, and Insane dynamically scale enemy speed, spawn rates, and boss health — Insane also boosts your score multiplier for the extra risk.
-* **Hostile AI & Multi-Stage Bosses:** Dodge hostile tracking fire from TIE Advanced fighters, survive the Level 15 Sentinel Swarm (now arriving in waves instead of all at once), take down shielded Motherships and Superlasers, break a coordinated Hive Swarm (a boss made of dozens of linked minions orbiting a queen who enrages the survivors when she falls), outrun a Boss Carrier that launches wings of interceptors instead of fighting directly, and face down the Space Worm — a massive segmented boss that slithers around the arena, vulnerable only at its head.
+* **Seven Bosses on a Fair Rotation:** Every 5th level is a boss, drawn from an explicit rotation so no encounter gets starved — the Superlaser Station (L5), the shielded Mothership (L10), the Sentinel Swarm (L15, arriving in waves rather than all at once), the Dreadnought (L20), the Hive Swarm (L25 — dozens of linked minions orbiting a queen who enrages the survivors when she falls), the Boss Carrier (L30, which launches wings of interceptors instead of fighting directly), and the Space Worm (L40).
+* **The Space Worm:** A massive segmented boss that burrows on a cycle — submerged it is untouchable and harmless, but the disturbance it drags along the surface telegraphs exactly where it will erupt. Its whole body is solid, so the fight is threading the gaps in a moving wall; only the head can be damaged.
+* **Mid-Run Upgrades:** Clearing a boss deals you three upgrade cards — extra hull, faster coils, focused emitters, a scrap magnet, a spare airframe and more. Pick with `1`/`2`/`3` or a tap. They stack across a run and reset with it, so no two runs build the same way.
+* **Boss Rush:** Unlocked by beating level 26 — every boss, back to back, no filler levels and no hyperspace, at a 1.3× score premium. Your best score and deepest wave are tracked on the Pilot Record.
+* **Daily Challenge:** A date-seeded run, so every pilot in the world gets the same level layouts today. Your best result for the day is saved per pilot.
+* **Close Calls:** Threading an enemy shot scores and extends your combo, so dodging is worth as much as shooting. Counted on the game-over summary.
+* **Hulls That Trade, Not Just Differ:** Ship speed is rated on real terminal velocity rather than raw thrust (friction dominates the flight model), and slow hulls like the Borg Cube get proportional damage resistance and shield regeneration in exchange — low speed is a playstyle, not a trap.
+* **Hostile AI:** Dodge tracking fire from TIE Advanced fighters and homing Sentinels, whose chase speed is capped against whatever hull you picked so disengaging is always possible.
 * **Hyperspace Anomalies:** Every 7th level drops you into a first-person cockpit rail-shooter — full-canvas view, a physical instrument dash with live shield/heat/hull/combo gauges and an anomaly-countdown ring, evade-and-survive against the clock.
 * **Retro 8-Bit Audio:** A custom JavaScript audio synthesizer dynamically generates all sound effects (lasers, explosions, powerups, achievement fanfares) without needing external audio files.
 * **Responsive Touch Controls:** Automatically detects mobile devices and renders an on-screen joystick, fire button, and nuke detonator.
@@ -27,6 +34,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **Fire:** Left-Click or `Space`
 * **Screen Nuke:** `B`
 * **Pause:** `P`
+* **Pick an upgrade (after a boss):** `1` / `2` / `3`
 
 **Mobile/Tablet:**
 * Use the on-screen left joystick to aim and thrust.
@@ -36,7 +44,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 No build tools, package managers, or local servers are required. Simply clone the repository and open `index.html` in any modern web browser.
 
 ## ✅ Testing
-An opt-in self-test harness ships alongside the game: open `index.html?test=1` in a browser to run ~62 automated checks (rendering, the full difficulty/level sweep, boss and achievement unlock paths, profile isolation, and more) and see a visual pass/fail report. It only loads with that query flag, so it has zero effect on normal play, and every destructive check runs under a disposable pilot profile that's deleted when the run finishes.
+An opt-in self-test harness ships alongside the game: open `index.html?test=1` in a browser to run ~84 automated checks (rendering, the full difficulty/level sweep, boss rotation fairness, the perk system, Boss Rush and Daily Challenge determinism, achievement unlock paths, profile isolation, and more) and see a visual pass/fail report. It only loads with that query flag, so it has zero effect on normal play, and every destructive check runs under a disposable pilot profile that's deleted when the run finishes.
 
 ## ⚖️ Disclaimer & Copyright
 **Space Fandoms Collide** is a free, non-commercial fan tribute built for educational and portfolio purposes. 
