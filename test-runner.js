@@ -313,6 +313,94 @@
         equipTrail('classic');
     });
 
+    test('a wounded boss breaks into a 3D cockpit pursuit carrying its HP across', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();     // dreadnought: a single-entity boss
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        if (!boss) throw new Error('no boss at level 20');
+        targets = [boss];
+        if (is3DMode || bossPursuit) throw new Error('the fight should start in 2D');
+
+        // Wound it just past the threshold with a single shot.
+        boss.hp = Math.ceil(boss.maxHp * 0.5) + 1;
+        ship.x = boss.x - 120; ship.y = boss.y; mouse.x = boss.x; mouse.y = boss.y;
+        mouse.leftDown = true; fireCooldown = 0;
+        for (let f = 0; f < 200 && !bossPursuit; f++) update(0.016);
+        mouse.leftDown = false;
+        if (!bossPursuit) throw new Error('boss never broke away into a pursuit');
+        if (!is3DMode) throw new Error('pursuit did not switch to the cockpit view');
+
+        let boss3D = targets3D.find(t => t.isBoss);
+        if (!boss3D) throw new Error('no boss entity in the pursuit');
+        if (boss3D.maxHp !== boss.maxHp) throw new Error('boss max HP did not carry across');
+        if (boss3D.hp > boss.maxHp * 0.5) throw new Error('boss should arrive already wounded');
+        if (targets3D.length < 2) throw new Error('pursuit spawned no asteroid field');
+        if (targets.length !== 0) throw new Error('the 2D field should be handed off, not left running');
+    });
+
+    test('the pursuit boss holds a firing distance and shoots back', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss]; boss.hp = 2;
+        beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        let sawFire = false, minZ = Infinity, maxZ = -Infinity;
+        for (let f = 0; f < 600; f++) {
+            update3D(0.016);
+            if (enemyBullets3D.length > 0) sawFire = true;
+            if (targets3D.includes(b3)) { minZ = Math.min(minZ, b3.z); maxZ = Math.max(maxZ, b3.z); }
+        }
+        if (!sawFire) throw new Error('pursuit boss never fired');
+        if (minZ < 300) throw new Error('pursuit boss closed to ramming range instead of holding a duel distance');
+        if (maxZ > 3400) throw new Error('pursuit boss drifted out of the arena');
+        if (!targets3D.includes(b3)) throw new Error('pursuit boss was culled by the depth logic');
+    });
+
+    test('a nuke cannot delete the pursuit boss or hand a free win', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss];
+        beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        let hpBefore = b3.hp;
+        bombs = 3; triggerNuke();
+        if (!targets3D.some(t => t.isBoss)) throw new Error('nuke deleted the pursuit boss outright');
+        if (b3.hp >= hpBefore) throw new Error('nuke did no damage to the pursuit boss');
+        if (b3.hp < 1) throw new Error('nuke should floor the boss at 1 HP, not kill it');
+    });
+
+    test('killing the pursuit boss ends the level and offers a perk', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss];
+        beginBossPursuit(boss);
+        let b3 = targets3D.find(t => t.isBoss);
+        let kills = lifetimeStats.bossKills, lvl = level;
+        b3.hp = 1;
+        // Put a bullet right on it rather than relying on aim through a moving asteroid field.
+        bullets3D.push({ x: b3.x, y: b3.y, z: b3.z, vx: 0, vy: 0, vz: 0, r: 5, color: '#fff' });
+        for (let f = 0; f < 10 && bossPursuit; f++) update3D(0.016);
+        if (lifetimeStats.bossKills <= kills) throw new Error('pursuit kill did not count as a boss kill');
+        if (bossPursuit) throw new Error('pursuit did not end when the boss died');
+        if (is3DMode) throw new Error('pursuit left the game stuck in the cockpit view');
+        if (level !== lvl + 1) throw new Error('level did not advance after the pursuit');
+        if (gameState !== 'UPGRADE_CHOICE') throw new Error('pursuit win did not offer a perk');
+        chooseRunPerk(0);
+    });
+
+    test('swarm bosses stay a 2D fight and never trigger a pursuit', () => {
+        gameDifficulty = 'easy';
+        [15, 25].forEach(lvl => {                          // sentinel swarm, hive swarm
+            startGame('xwing'); level = lvl; startLevel();
+            for (let f = 0; f < 240; f++) update(0.016);
+            if (bossPursuit) throw new Error('level ' + lvl + ' swarm wrongly triggered a cockpit pursuit');
+            if (is3DMode) throw new Error('level ' + lvl + ' swarm switched to the cockpit view');
+        });
+    });
+
     test('clearing a boss level offers three distinct perks that actually apply', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 5; startLevel();

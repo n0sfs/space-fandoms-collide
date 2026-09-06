@@ -439,6 +439,15 @@ let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI /
 // --- 3D STATE VARIABLES ---
 let is3DMode = false, levelTimer3D = 0;
 let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged = false;
+// Phase 2 of a boss fight: once a boss is wounded it breaks for an asteroid field and the fight
+// continues from the cockpit in 3D. Only bosses that are a single entity do this -- the Sentinel
+// and Hive swarms have no one thing to chase, so they stay a 2D fight start to finish.
+let bossPursuit = false, bossPursuitName = "";
+const BOSS_PURSUIT_THRESHOLD = 0.5;   // fraction of max HP at which it breaks and runs
+const BOSS_DISPLAY_NAMES = {
+    boss_station: "SUPERLASER STATION", boss_mothership: "MOTHERSHIP",
+    boss_dreadnought: "DREADNOUGHT", boss_carrier: "BOSS CARRIER", boss_worm: "SPACE WORM",
+};
 let sentinelSpawnQueue = 0, sentinelSpawnTimer = 0, sentinelSpeedMod = 1;
 const FOV = 500;
 let camX = 0, camY = 0;
@@ -572,12 +581,18 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; is3DMode = false; targets3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
     bombs--; lifetimeStats.bombsUsed++; playSfx('nuke'); nukeFlash = 1.0; shake = 30; vibrate([30, 40, 30]);
-    if (is3DMode) { enemyBullets3D = []; targets3D = []; }
+    if (is3DMode) {
+        enemyBullets3D = [];
+        // A pursuit boss survives a nuke at 1 HP, exactly as it does in the 2D fight -- clearing
+        // targets3D outright would delete it and hand the player a free, unscored win.
+        targets3D.forEach(t => { if (t.isBoss) { t.hp = Math.max(1, t.hp - 50); spawnText(canvas.width/2, canvas.height/2, "-50", "#ffcc00", 24); } });
+        targets3D = targets3D.filter(t => t.isBoss);
+    }
     else {
         enemyBullets = [];
         targets.forEach(t => {
@@ -1746,6 +1761,63 @@ function damagePlayer(amt) {
     updateUI();
 }
 
+// --- BOSS PURSUIT (2D fight -> 3D cockpit chase) ---
+// A wounded boss breaks for a nearby asteroid field. The player follows it into the first-person
+// cockpit view and finishes the fight there, carrying the boss's remaining HP across. Splitting
+// the fight in two gives every boss a second act and reuses the hyperspace cockpit for something
+// other than the every-7th-level survival round.
+function beginBossPursuit(boss) {
+    bossPursuit = true;
+    bossPursuitName = BOSS_DISPLAY_NAMES[boss.type] || "HOSTILE";
+    playSfx('glitch'); shake += 25; vibrate([40, 60, 40]);
+
+    // Hand the 2D fight off: everything on the field is left behind.
+    bullets = []; enemyBullets = []; powerups = []; targets = []; lightTrails = []; scrapDrops = [];
+    sentinelSpawnQueue = 0; hiveSwarmActive = false;
+    if (swarmBarEl) swarmBarEl.classList.add("hidden");
+
+    is3DMode = true;
+    targets3D = []; bullets3D = []; enemyBullets3D = [];
+    camX = 0; camY = 0; tookDamageThisHyperspace = false;
+    levelTimer3D = 0;               // the survival clock is not what ends this round
+    invulnTimer = Math.max(invulnTimer, 1.5);
+
+    targets3D.push({
+        isBoss: true, type: boss.type,
+        x: 0, y: 0, z: 3200,
+        // Keep close to the hull's natural 2D radius and get the scale from holding it nearer the
+        // camera instead. The designs size their small details in absolute pixels (gun ports are
+        // literal 6x4 rects), so inflating r shrinks that detail relative to the hull and the boss
+        // renders as a flat slab -- whereas the canvas transform scales everything uniformly.
+        r: Math.max(80, Math.min(160, boss.r * 1.05)),
+        vx: 0, vy: 0, vz: 0,
+        angle: 0, rotSpeed: 0.25,
+        hp: boss.hp, maxHp: boss.maxHp,
+        hitFlash: 0, fireTimer: 2.5, bobPhase: 0,
+        trail: [], wiggle: 0, burrow: 0, wormPhase: "up", wormTimer: 999,
+        nodes: null,
+    });
+    // Seed the field so the player arrives inside the asteroids rather than in empty space.
+    for (let i = 0; i < 18; i++) spawnTarget3D();
+
+    spawnText(canvas.width/2, canvas.height/2 - 40, "IT'S BREAKING AWAY!", "#ff5555", 30);
+    spawnText(canvas.width/2, canvas.height/2 + 4, "PURSUE INTO THE ASTEROID FIELD", "#00ffcc", 18);
+    updateUI();
+}
+
+function endBossPursuit(victory) {
+    bossPursuit = false;
+    is3DMode = false;
+    targets3D = []; bullets3D = []; enemyBullets3D = [];
+    if (!victory) return;
+    let clearedLevel = level;
+    level++; updateUI();
+    bullets = []; enemyBullets = []; lightTrails = []; targets = [];
+    hyperspace = 0; playSfx('powerup');
+    offerRunPerks();
+    return clearedLevel;
+}
+
 // --- MID-RUN PERKS ---
 // Clearing a boss level offers a choice of three upgrades. A boss kill used to be nothing but a
 // score spike; this gives each run its own build-up arc and makes repeat runs diverge.
@@ -1843,7 +1915,7 @@ function startGame(shipId, mode) {
     if (gameMode === "rush") diffScoreMult *= 1.3;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0;
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false;
     runKills = 0; runBestCombo = 1; runGrazes = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
@@ -1939,6 +2011,7 @@ function startLevel() {
     // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
     // Swarm cleared before its trickle finished bleeds its leftovers into the next level.
     sentinelSpawnQueue = 0;
+    bossPursuit = false;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
@@ -2075,13 +2148,24 @@ function update3D(dt) {
     if (multishotTimer > 0) { multishotTimer -= dt; if (multishotTimer < 0) multishotTimer = 0; if (frames % 30 === 0) updateUI(); }
     if (chaosTimer > 0) { chaosTimer -= dt; if (chaosTimer < 0) chaosTimer = 0; }
 
-    levelTimer3D -= dt;
-    if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); } 
-    else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
-        lifetimeStats.hyperspaceCleared++;
-        if (!tookDamageThisHyperspace) unlockAchievement('untouchable');
-        level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
-        bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
+    if (bossPursuit) {
+        // No survival clock here -- the round ends when the boss does. Keep the field stocked so
+        // it stays an asteroid field rather than emptying out into a plain duel.
+        if (targets3D.filter(t => !t.isBoss).length < 22 && Math.random() < 0.05) spawnTarget3D();
+        if (!targets3D.some(t => t.isBoss)) {
+            // Boss destroyed (scored in the bullet-collision path below); wrap the level up.
+            endBossPursuit(true);
+            return;
+        }
+    } else {
+        levelTimer3D -= dt;
+        if (levelTimer3D > 0) { let spawnRate = 0.026 + (level * 0.0012); if (Math.random() < spawnRate) spawnTarget3D(); }
+        else if (targets3D.length === 0 && enemyBullets3D.length === 0) {
+            lifetimeStats.hyperspaceCleared++;
+            if (!tookDamageThisHyperspace) unlockAchievement('untouchable');
+            level++; updateUI(); gameState = "LEVEL_TRANSITION"; hyperspace = 0; playSfx('powerup');
+            bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; return;
+        }
     }
 
     for(let i = floatingTexts.length-1; i>=0; i--) { let t = floatingTexts[i]; t.y -= 30 * dt; t.life -= dt * 1.5; if(t.life <= 0) floatingTexts.splice(i, 1); }
@@ -2094,16 +2178,46 @@ function update3D(dt) {
     for(let i=targets3D.length-1; i>=0; i--) {
         let t = targets3D[i];
         if (t.type === "tie_fighter") {
-            let dx = camX - t.x; let dy = camY - t.y; t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5; 
+            let dx = camX - t.x; let dy = camY - t.y; t.vx += dx * dt * 0.5; t.vy += dy * dt * 0.5;
             t.fireTimer -= dt;
             if (t.fireTimer <= 0 && t.z < 2500) { enemyBullets3D.push({ x: t.x, y: t.y, z: t.z, vx: (camX - t.x)*0.8, vy: (camY - t.y)*0.8, vz: -1200 }); t.fireTimer = 1.5; playSfx('enemyShoot'); }
         }
 
-        t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
-        if (t.hitFlash > 0) t.hitFlash -= dt;
+        if (t.isBoss) {
+            // Holds a firing distance rather than flying past: eases toward a bobbing target depth
+            // and weaves laterally, so it stays a duel instead of a one-pass flyby.
+            t.bobPhase += dt;
+            let targetZ = 680 + Math.sin(t.bobPhase * 0.45) * 230;
+            t.z += (targetZ - t.z) * Math.min(1, dt * 0.9);
+            t.vx = Math.cos(t.bobPhase * 0.63) * 230;
+            t.vy = Math.sin(t.bobPhase * 0.86) * 150;
+            t.vz = 0;
+            // A slow roll, not a spin. These hulls are drawn as billboards facing the cockpit,
+            // so continuous rotation reads as tumbling debris rather than a ship holding station.
+            t.angle = Math.sin(t.bobPhase * 0.4) * 0.16;
+            t.fireTimer -= dt;
+            if (t.fireTimer <= 0) {
+                playSfx('enemyShoot'); shake += 3;
+                // A spread aimed at the cockpit, tightening as the boss gets closer to death.
+                let hurt = 1 - (t.hp / t.maxHp);
+                let shots = 3 + Math.floor(hurt * 3);
+                for (let s = 0; s < shots; s++) {
+                    let spread = (s - (shots - 1) / 2) * 90;
+                    enemyBullets3D.push({ x: t.x + spread, y: t.y, z: t.z, vx: (camX - t.x - spread) * 0.55, vy: (camY - t.y) * 0.55, vz: -1500 });
+                }
+                t.fireTimer = Math.max(1.1, 2.6 - hurt * 1.2);
+            }
+            t.x += t.vx * dt; t.y += t.vy * dt;
+            if (t.hitFlash > 0) t.hitFlash -= dt;
+            // Falls through to the bullet-collision pass below -- it just skips the generic
+            // fly-past movement, the depth cull and the ram check, none of which suit a duel.
+        } else {
+            t.x += t.vx*dt; t.y += t.vy*dt; t.z -= t.vz*dt; t.angle += t.rotSpeed*dt;
+            if (t.hitFlash > 0) t.hitFlash -= dt;
 
-        if (t.z < 50 && t.z > -50) { if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; } }
-        if (t.z < -100) { targets3D.splice(i, 1); continue; }
+            if (t.z < 50 && t.z > -50) { if (Math.hypot(t.x - camX, t.y - camY) < t.r + 30) { damagePlayer(30); playSfx('boom'); shake = 10; targets3D.splice(i, 1); continue; } }
+            if (t.z < -100) { targets3D.splice(i, 1); continue; }
+        }
 
         let hit = false;
         for(let j=bullets3D.length-1; j>=0; j--) {
@@ -2113,7 +2227,16 @@ function update3D(dt) {
                 t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
-                    score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2); updateUI(); hit = true; break;
+                    if (t.isBoss) {
+                        shake = 40; nukeFlash = 1.0;
+                        score += diffScoreMult * 1500 * combo;
+                        currentRunScrap += Math.round(10 * runScrapMult);
+                        lifetimeStats.bossKills++;
+                        spawnText(canvas.width/2, canvas.height/2 - 30, bossPursuitName + " DESTROYED", "#ffcc00", 30);
+                    } else {
+                        score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2);
+                    }
+                    updateUI(); hit = true; break;
                 }
             }
         }
@@ -2405,8 +2528,17 @@ function update(dt) {
                 if (bullets[i].isEmpBolt) { spawnParticles(bullets[i].x, bullets[i].y, "#00ffff", 10); }
                 
                 playSfx('hit');
-                if (t.hp !== undefined && t.hp > dmg) { 
-                    t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); break; 
+                if (t.hp !== undefined && t.hp > dmg) {
+                    t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5);
+                    // A wounded boss breaks for the asteroid field and the fight moves to the
+                    // cockpit. Swarm "bosses" are excluded -- there is no single thing to chase.
+                    if (t.type.startsWith("boss") && !t.pursuitTriggered && t.hp <= t.maxHp * BOSS_PURSUIT_THRESHOLD) {
+                        t.pursuitTriggered = true;
+                        bullets.splice(i, 1);
+                        beginBossPursuit(t);
+                        return;
+                    }
+                    break;
                 }
                 
                 playSfx('boom'); shake = t.r > 30 ? 10 : 3;
@@ -2521,37 +2653,189 @@ function render3D() {
         ctx.save(); ctx.translate(sx, sy); ctx.scale(scale, scale); ctx.rotate(t.angle);
         ctx.globalAlpha = Math.min(1, (3000 - t.z) / 1000);
         if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
-        else { 
-            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+        else {
+            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false);
             else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
-            else TargetDesigns.asteroid.draw(ctx, t.r, t); 
+            // A pursuit boss reuses its 2D artwork -- the designs draw around the origin at a
+            // given radius, which is exactly what this transform already provides. Its health is
+            // hidden for the draw because the designs hang the bar at -r-20, which at this world
+            // radius floats far above the hull as a detached red line; the cockpit HUD carries it.
+            else if (t.isBoss && TargetDesigns[t.type]) {
+                let hp = t.hp; t.hp = undefined;
+                TargetDesigns[t.type].draw(ctx, t.r, t);
+                t.hp = hp;
+            }
+            else TargetDesigns.asteroid.draw(ctx, t.r, t);
         }
         ctx.restore();
     });
 
-    // Cockpit window: the whole canvas is the view -- nothing about the play field is hidden
-    // behind cockpit dressing. A thin metal frame borders it, with a slim instrument dash
-    // along the very bottom instead of the old trapezoid that cropped half the screen away.
-    let winL = 0.015, winR = 0.985, winT = 0.02, dashTop = 0.85;
-    let fx0 = canvas.width*winL, fx1 = canvas.width*winR, fy0 = canvas.height*winT, fy1 = canvas.height*dashTop;
+    // --- COCKPIT ---
+    // Built as a shaped canopy aperture rather than a bordered rectangle. The scene is already
+    // drawn full-canvas above; the airframe is then filled in *around* an opening, so you read
+    // it as sitting inside a vehicle instead of looking at a frame drawn on top of one. The
+    // opening arches up along the canopy rail and dips down across the middle of the dash, so
+    // the wraparound only ever eats the corners -- the centre of the view, where the player is
+    // actually flying, stays completely clear (the old full-width trapezoid cropped half the
+    // screen away, and the flat rectangle that replaced it read as a HUD border, not a cockpit).
+    let dashTop = 0.845;
+    let fx0 = canvas.width * 0.035, fx1 = canvas.width * 0.965;
+    let fy0 = canvas.height * 0.055, fy1 = canvas.height * dashTop;
+    let cut = canvas.height * 0.085;        // A-pillar chamfer across the corners
+    let archTop = canvas.height * 0.045;    // canopy rail bows up at the centre
+    let archBot = canvas.height * 0.05;     // dash falls away at the centre
+    let dashCX = canvas.width / 2;
+    let dashY = canvas.height * 0.928;
 
-    // Slim instrument dash across the bottom
-    let dashGrad = ctx.createLinearGradient(0, canvas.height, 0, fy1);
-    dashGrad.addColorStop(0, "#141519"); dashGrad.addColorStop(1, "#34363e");
-    ctx.fillStyle = dashGrad; ctx.fillRect(0, fy1, canvas.width, canvas.height - fy1);
+    // One reusable outline. `startNew` is false when it's being appended to an enclosing rect
+    // for an even-odd "fill everything except this hole" pass.
+    const canopyOutline = (startNew) => {
+        if (startNew) ctx.beginPath();
+        ctx.moveTo(fx0 + cut, fy0);
+        ctx.quadraticCurveTo(dashCX, fy0 - archTop, fx1 - cut, fy0);
+        ctx.lineTo(fx1, fy0 + cut);
+        ctx.lineTo(fx1, fy1 - cut * 0.5);
+        ctx.quadraticCurveTo(dashCX, fy1 + archBot, fx0, fy1 - cut * 0.5);
+        ctx.lineTo(fx0, fy0 + cut);
+        ctx.closePath();
+    };
 
-    let dashY = canvas.height * (dashTop + (1 - dashTop) * 0.55), dashCX = canvas.width / 2;
+    // Glass, drawn under the airframe so reflections sit behind the structure holding them.
+    ctx.save(); canopyOutline(true); ctx.clip();
+    let reflGrad = ctx.createLinearGradient(canvas.width*0.08, canvas.height*0.02, canvas.width*0.62, canvas.height*0.62);
+    reflGrad.addColorStop(0, "rgba(190, 225, 255, 0.10)");
+    reflGrad.addColorStop(0.20, "rgba(190, 225, 255, 0.025)");
+    reflGrad.addColorStop(0.36, "rgba(190, 225, 255, 0)");
+    ctx.fillStyle = reflGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // A tighter highlight hugging the rail: curved glass catches light along its bend. Kept very
+    // faint -- at any real opacity it reads as a grey bar laid across the view.
+    ctx.strokeStyle = "rgba(200, 235, 255, 0.045)"; ctx.lineWidth = canvas.height * 0.022;
+    ctx.beginPath();
+    ctx.moveTo(fx0 + cut, fy0 + canvas.height * 0.026);
+    ctx.quadraticCurveTo(dashCX, fy0 - archTop + canvas.height * 0.026, fx1 - cut, fy0 + canvas.height * 0.026);
+    ctx.stroke();
+    // Airframe shadow thrown onto the glass -- what actually puts the frame in front of the view.
+    let shadeGrad = ctx.createRadialGradient(CX, CY, canvas.height * 0.32, CX, CY, canvas.height * 0.74);
+    shadeGrad.addColorStop(0, "rgba(0,0,0,0)"); shadeGrad.addColorStop(1, "rgba(0,0,0,0.5)");
+    ctx.fillStyle = shadeGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
 
-    // Vent slits along the dash's top ridge
-    ctx.fillStyle = "#0a0a0c";
-    for (let i = -4; i <= 4; i++) {
-        let vx = dashCX + i * canvas.width * 0.03;
-        ctx.fillRect(vx - 2, fy1 + 3, 4, 8);
+    // Airframe: everything outside the opening is solid structure. Kept deliberately darker than
+    // the starfield -- you are sitting in shadow looking out at a lit scene, and an airframe
+    // brighter than the view reads as a window cut in a wall rather than a cockpit.
+    let hullGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    hullGrad.addColorStop(0, "#1a1d22"); hullGrad.addColorStop(0.4, "#111317"); hullGrad.addColorStop(1, "#070809");
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, canvas.height);
+    canopyOutline(false);
+    ctx.fillStyle = hullGrad; ctx.fill("evenodd");
+
+    // Panel seams across the airframe, so it reads as assembled plate rather than a flat mask.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, canvas.width, canvas.height); canopyOutline(false); ctx.clip("evenodd");
+    ctx.strokeStyle = "rgba(255,255,255,0.045)"; ctx.lineWidth = 1;
+    [0.16, 0.34, 0.66, 0.84].forEach(f => {
+        ctx.beginPath(); ctx.moveTo(canvas.width * f, 0); ctx.lineTo(canvas.width * f, canvas.height); ctx.stroke();
+    });
+    ctx.beginPath(); ctx.moveTo(0, canvas.height * 0.93); ctx.lineTo(canvas.width, canvas.height * 0.93); ctx.stroke();
+    ctx.restore();
+
+    // Machined lip around the opening: a dark seam with a lit inner edge.
+    canopyOutline(true); ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 9; ctx.stroke();
+    canopyOutline(true); ctx.strokeStyle = "rgba(150, 172, 200, 0.5)"; ctx.lineWidth = 2; ctx.stroke();
+
+    // Rivets along the canopy rail and the A-pillars.
+    const rivet = (x, y) => {
+        ctx.fillStyle = "#3d424c"; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.22)"; ctx.beginPath(); ctx.arc(x - 0.8, y - 0.8, 1.1, 0, Math.PI*2); ctx.fill();
+    };
+    for (let i = 0; i <= 14; i++) {
+        let t = i / 14, mx = fx0 + cut + (fx1 - fx0 - cut*2) * t;
+        // point on the quadratic rail, lifted just outside the lip
+        let ry = (1-t)*(1-t)*fy0 + 2*(1-t)*t*(fy0 - archTop) + t*t*fy0;
+        rivet(mx, ry - 9);
     }
+    [[fx0 + cut, fy0, fx0, fy0 + cut], [fx1 - cut, fy0, fx1, fy0 + cut]].forEach(([ax, ay, bx, by]) => {
+        for (let i = 0; i <= 2; i++) rivet(ax + (bx-ax)*(i/2) + (bx>ax?7:-7), ay + (by-ay)*(i/2) - 5);
+    });
+
+    // Canopy struts: a short centre spine off the rail plus two A-pillar braces, laid over the
+    // glass at the extreme edges where they cost the least visibility.
+    // Each strut is a tapered quad anchored into the frame, not a floating line -- a stroked
+    // segment reads as a scratch on the glass, a solid tapering member reads as structure.
+    const strut = (ax, ay, bx, by, wA, wB) => {
+        let ang = Math.atan2(by - ay, bx - ax) + Math.PI / 2;
+        let nx = Math.cos(ang), ny = Math.sin(ang);
+        ctx.beginPath();
+        ctx.moveTo(ax + nx * wA, ay + ny * wA);
+        ctx.lineTo(bx + nx * wB, by + ny * wB);
+        ctx.lineTo(bx - nx * wB, by - ny * wB);
+        ctx.lineTo(ax - nx * wA, ay - ny * wA);
+        ctx.closePath();
+        let g = ctx.createLinearGradient(ax + nx * wA, ay + ny * wA, ax - nx * wA, ay - ny * wA);
+        g.addColorStop(0, "#2b3038"); g.addColorStop(0.35, "#15171b"); g.addColorStop(1, "#0a0b0d");
+        ctx.fillStyle = g; ctx.fill();
+        ctx.strokeStyle = "rgba(160, 182, 210, 0.3)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(ax + nx * wA, ay + ny * wA); ctx.lineTo(bx + nx * wB, by + ny * wB); ctx.stroke();
+    };
+    // Centre spine off the rail
+    strut(dashCX, fy0 - archTop * 0.6, dashCX, fy0 + canvas.height * 0.075, 7, 3.5);
+    // A-pillars sweeping in from the chamfered corners
+    strut(fx0 + cut * 0.95, fy0 + 2, fx0 + cut * 0.08, fy0 + cut * 1.75, 7, 3);
+    strut(fx1 - cut * 0.95, fy0 + 2, fx1 - cut * 0.08, fy0 + cut * 1.75, 7, 3);
+
+    // Status lamp clusters recessed into the roof line, on their own sunken plates.
+    [-1, 1].forEach(side => {
+        let pw = 96, ph = 34;
+        let px = side < 0 ? fx0 + 6 : fx1 - 6 - pw;
+        let py = Math.max(4, fy0 * 0.5 - ph / 2);
+        ctx.fillStyle = "#0a0b0d"; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 4); ctx.fill();
+        ctx.strokeStyle = "rgba(150, 172, 200, 0.18)"; ctx.lineWidth = 1; ctx.stroke();
+        let labels = side < 0 ? ["PWR", "NAV"] : ["O2", "GEN"];
+        labels.forEach((lab, i) => {
+            let ly = py + 11 + i * 13;
+            let on = Math.sin(frames * 0.03 + i * 2.1 + side) > -0.35;
+            let col = i === 0 ? "#33ff88" : "#ffaa33";
+            ctx.fillStyle = on ? col : "#1d2026";
+            if (on) applyGlow(ctx, col, 5);
+            ctx.beginPath(); ctx.arc(px + 12, ly, 3.4, 0, Math.PI*2); ctx.fill();
+            clearGlow(ctx);
+            ctx.textAlign = "left"; ctx.font = "8px Courier New"; ctx.fillStyle = "rgba(175, 195, 215, 0.6)";
+            ctx.fillText(lab, px + 22, ly + 3);
+        });
+        // Toggle switches alongside the lamps, for something mechanical in the roof panel.
+        for (let s = 0; s < 3; s++) {
+            let sx = px + 58 + s * 12, up = Math.sin(frames * 0.017 + s * 2.4 + side * 1.7) > 0;
+            ctx.fillStyle = "#0e1013"; ctx.fillRect(sx - 3, py + 8, 7, 18);
+            ctx.strokeStyle = "rgba(150,172,200,0.2)"; ctx.lineWidth = 0.75; ctx.strokeRect(sx - 3, py + 8, 7, 18);
+            ctx.fillStyle = "#6d7580"; ctx.fillRect(sx - 2, up ? py + 9 : py + 18, 5, 7);
+        }
+    });
+    ctx.textAlign = "center";
+
+    // Raised dash console: a bevelled lip along the top of the coaming, then vent slits.
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(fx1, fy1 - cut * 0.5);
+    ctx.quadraticCurveTo(dashCX, fy1 + archBot, fx0, fy1 - cut * 0.5);
+    ctx.lineTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.closePath();
+    ctx.clip();
+    let coamGrad = ctx.createLinearGradient(0, fy1 - cut * 0.5, 0, canvas.height);
+    coamGrad.addColorStop(0, "#3a3f49"); coamGrad.addColorStop(0.22, "#22252b"); coamGrad.addColorStop(1, "#0b0c0f");
+    ctx.fillStyle = coamGrad; ctx.fillRect(0, fy1 - cut, canvas.width, canvas.height);
+    // Vent slits follow the coaming curve rather than sitting on a flat line.
+    ctx.fillStyle = "#0a0a0c";
+    for (let i = -7; i <= 7; i++) {
+        let t = 0.5 + i * 0.045;
+        let vx = fx0 + (fx1 - fx0) * t;
+        let vy = (1-t)*(1-t)*(fy1 - cut*0.5) + 2*(1-t)*t*(fy1 + archBot) + t*t*(fy1 - cut*0.5);
+        ctx.fillRect(vx - 2, vy + 10, 4, 9);
+    }
+    ctx.restore();
 
     // Central hub: a thick beveled ring, like a control-yoke mount
     ctx.save(); ctx.translate(dashCX, dashY);
-    let hubR = canvas.height * 0.06;
+    let hubR = canvas.height * 0.052;
     let ringGrad = ctx.createRadialGradient(-hubR*0.3, -hubR*0.3, hubR*0.2, 0, 0, hubR);
     ringGrad.addColorStop(0, "#5a5e68"); ringGrad.addColorStop(0.55, "#2c2e34"); ringGrad.addColorStop(1, "#141519");
     ctx.fillStyle = ringGrad; ctx.beginPath(); ctx.arc(0, 0, hubR, 0, Math.PI*2); ctx.fill();
@@ -2561,11 +2845,13 @@ function render3D() {
     ctx.strokeStyle = "rgba(0, 220, 255, 0.4)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, hubR*0.62, 0, Math.PI*2); ctx.stroke();
     let hubPulse = 0.5 + Math.sin(frames*0.05)*0.2;
     applyGlow(ctx, "#00ccff", 8); ctx.fillStyle = `rgba(0, 220, 255, ${hubPulse})`; ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
-    // Countdown ring around the hub, draining as the anomaly timer runs out
-    let timeFrac = Math.max(0, Math.min(1, levelTimer3D / 30));
+    // Ring around the hub: the anomaly countdown normally, the boss's remaining health during a
+    // pursuit -- same dial, whichever number is the one actually ending the round.
+    let ringBoss = bossPursuit ? targets3D.find(t => t.isBoss) : null;
+    let ringFrac = ringBoss ? Math.max(0, ringBoss.hp / ringBoss.maxHp) : Math.max(0, Math.min(1, levelTimer3D / 30));
     ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, hubR*1.12, 0, Math.PI*2); ctx.stroke();
-    ctx.strokeStyle = timeFrac < 0.2 ? "#ff3333" : "#00e0ff"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, hubR*1.12, -Math.PI/2, -Math.PI/2 + Math.PI*2*timeFrac); ctx.stroke();
+    ctx.strokeStyle = ringFrac < 0.2 ? "#ff3333" : (ringBoss ? "#ff8844" : "#00e0ff"); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, hubR*1.12, -Math.PI/2, -Math.PI/2 + Math.PI*2*ringFrac); ctx.stroke();
     ctx.restore();
 
     [-1, 1].forEach(side => {
@@ -2624,53 +2910,89 @@ function render3D() {
         ctx.fillText(side < 0 ? "SHIELD" : "HEAT", gx, py + panelH - 5);
     });
 
-    // Thin metal window frame around the whole box, with small corner mounts
-    ctx.strokeStyle = "#4a4d56"; ctx.lineWidth = 6;
-    ctx.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
-    ctx.strokeStyle = "rgba(0, 200, 220, 0.3)"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(fx0, fy0, fx1 - fx0, fy1 - fy0);
+    // --- HUD PROJECTED ON THE GLASS ---
+    // Clipped to the aperture so the reticle and brackets read as light thrown onto the canopy
+    // rather than as decals painted across the airframe.
+    ctx.save(); canopyOutline(true); ctx.clip();
+    applyGlow(ctx, "#00ffcc", 6);
 
-    [[fx0, fy0], [fx1, fy0], [fx0, fy1], [fx1, fy1]].forEach(([x, y]) => {
-        ctx.fillStyle = "#22242a"; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = "#0a0a0c"; ctx.lineWidth = 1.5; ctx.stroke();
-        ctx.fillStyle = "#5a2020"; ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI*2); ctx.fill();
-    });
+    // Boresight reticle
+    ctx.strokeStyle = "rgba(0, 255, 200, 0.45)"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 22, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 22, CY);
+    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 22); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 22);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 255, 200, 0.22)";
+    ctx.beginPath(); ctx.arc(CX, CY, 22, 0, Math.PI*2); ctx.stroke();
+    // Pitch ladder rungs either side of the boresight, drifting with the camera
+    ctx.strokeStyle = "rgba(0, 255, 200, 0.28)"; ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+        if (i === 0) continue;
+        let ly = CY + i * 46 - (camY * 0.02) % 46;
+        ctx.beginPath();
+        ctx.moveTo(CX - 116, ly); ctx.lineTo(CX - 84, ly);
+        ctx.moveTo(CX + 84, ly); ctx.lineTo(CX + 116, ly);
+        ctx.stroke();
+    }
+    // Drift indicator: where the camera actually sits relative to boresight
+    let driftX = CX + Math.max(-150, Math.min(150, camX * 0.06));
+    let driftY = CY + Math.max(-110, Math.min(110, camY * 0.06));
+    ctx.strokeStyle = "rgba(255, 200, 60, 0.6)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(driftX, driftY, 7, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(driftX - 12, driftY); ctx.lineTo(driftX - 7, driftY);
+    ctx.moveTo(driftX + 7, driftY); ctx.lineTo(driftX + 12, driftY);
+    ctx.stroke();
 
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.4)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(CX - 100, CY); ctx.lineTo(CX - 20, CY); ctx.moveTo(CX + 100, CY); ctx.lineTo(CX + 20, CY);
-    ctx.moveTo(CX, CY - 100); ctx.lineTo(CX, CY - 20); ctx.moveTo(CX, CY + 100); ctx.lineTo(CX, CY + 20);
-    ctx.arc(CX, CY, 80, 0, Math.PI*2); ctx.stroke();
-
-    // Targeting-frame corner brackets, a common cockpit-HUD tell
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.55)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-    [[fx0, fy0, 1, 1], [fx1, fy0, -1, 1], [fx0, fy1, 1, -1], [fx1, fy1, -1, -1]].forEach(([x, y, dx, dy]) => {
-        ctx.beginPath(); ctx.moveTo(x, y + dy*22); ctx.lineTo(x, y); ctx.lineTo(x + dx*22, y); ctx.stroke();
-    });
-    ctx.lineCap = "butt";
-
-    // Soft diagonal canopy-glass glare, clipped to the window opening
-    ctx.save();
-    ctx.beginPath(); ctx.rect(fx0, fy0, fx1 - fx0, fy1 - fy0); ctx.clip();
-    let reflGrad = ctx.createLinearGradient(canvas.width*0.1, canvas.height*0.1, canvas.width*0.55, canvas.height*0.55);
-    reflGrad.addColorStop(0, "rgba(255, 255, 255, 0.09)");
-    reflGrad.addColorStop(0.18, "rgba(255, 255, 255, 0.02)");
-    reflGrad.addColorStop(0.32, "rgba(255, 255, 255, 0)");
-    ctx.fillStyle = reflGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    ctx.textAlign = "center";
-    let hudLabel = `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
-    ctx.font = "bold 15px Courier New";
+    // Banner high on the glass, out of the flight path. During a boss pursuit it carries the
+    // target's name and a threat bar instead of the anomaly countdown.
+    let pursuitBoss = bossPursuit ? targets3D.find(t => t.isBoss) : null;
+    let hudLabel = pursuitBoss
+        ? `TARGET: ${bossPursuitName}`
+        : `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
+    ctx.font = "bold 15px Courier New"; ctx.textAlign = "center";
     let hudW = ctx.measureText(hudLabel).width;
-    ctx.fillStyle = "rgba(0, 20, 20, 0.5)"; ctx.fillRect(CX - hudW/2 - 10, canvas.height*0.15 - 16, hudW + 20, 22);
-    ctx.fillStyle = "rgba(0, 255, 255, 0.9)"; ctx.fillText(hudLabel, CX, canvas.height*0.15);
+    let bannerY = canvas.height * 0.155;
+    let boxW = Math.max(hudW + 24, pursuitBoss ? 300 : 0), boxH = pursuitBoss ? 34 : 22;
+    ctx.fillStyle = "rgba(0, 24, 22, 0.45)"; ctx.fillRect(CX - boxW/2, bannerY - 16, boxW, boxH);
+    ctx.strokeStyle = pursuitBoss ? "rgba(255, 90, 90, 0.5)" : "rgba(0, 255, 200, 0.35)";
+    ctx.lineWidth = 1; ctx.strokeRect(CX - boxW/2, bannerY - 16, boxW, boxH);
+    ctx.fillStyle = pursuitBoss ? "rgba(255, 140, 120, 0.95)" : (levelTimer3D < 6 ? "rgba(255, 90, 90, 0.95)" : "rgba(0, 255, 200, 0.9)");
+    ctx.fillText(hudLabel, CX, bannerY);
+
+    if (pursuitBoss) {
+        let bw = boxW - 24, bx = CX - bw/2, by = bannerY + 6;
+        let frac = Math.max(0, pursuitBoss.hp / pursuitBoss.maxHp);
+        ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(bx, by, bw, 7);
+        ctx.fillStyle = frac < 0.25 ? "#ff3333" : "#ff8844"; ctx.fillRect(bx, by, bw * frac, 7);
+        ctx.strokeStyle = "rgba(255, 140, 120, 0.55)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 7);
+        // Off-screen chevron so the player can always find the boss in the field.
+        let bs = pursuitBoss.z > 10 ? FOV / pursuitBoss.z : 0;
+        let sx = (pursuitBoss.x - camX) * bs + CX, sy = (pursuitBoss.y - camY) * bs + CY;
+        if (bs === 0 || sx < fx0 + 40 || sx > fx1 - 40 || sy < fy0 + 40 || sy > fy1 - 40) {
+            let ang = Math.atan2(sy - CY, sx - CX);
+            let ex = CX + Math.cos(ang) * (canvas.width * 0.36), ey = CY + Math.sin(ang) * (canvas.height * 0.30);
+            ctx.save(); ctx.translate(ex, ey); ctx.rotate(ang);
+            ctx.fillStyle = "rgba(255, 90, 90, 0.75)";
+            ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, 9); ctx.lineTo(-8, -9); ctx.closePath(); ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    clearGlow(ctx);
+    ctx.restore();
     
     if (playerShield > 0) {
         // Edge-only vignette so the shield reads as a cue without washing out the whole scene.
+        // Clipped to the canopy: unclipped it tinted the airframe cyan too, which lit the
+        // interior brighter than the starfield and undid the sitting-in-shadow read entirely.
+        ctx.save(); canopyOutline(true); ctx.clip();
         let vign = ctx.createRadialGradient(CX, CY, canvas.height * 0.35, CX, CY, canvas.height * 0.8);
         vign.addColorStop(0, "rgba(0, 255, 255, 0)");
         vign.addColorStop(1, `rgba(0, 255, 255, ${0.08 + (playerShield / 100) * 0.14})`);
         ctx.fillStyle = vign; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
     }
     
     ctx.textAlign = "center";
