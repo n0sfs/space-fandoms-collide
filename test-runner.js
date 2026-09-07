@@ -108,6 +108,134 @@
         if (scrapDrops.length === 0) throw new Error('an ore asteroid did not guarantee a scrap drop');
     });
 
+    test('an elite enemy takes two hits and pays out more than the same ship normally would', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing');
+        // Point-blank: ship.r(15) + travel puts the first shot on target within frame 1, so the
+        // hp/alive assertions below don't have to guess how many frames a shot takes to arrive.
+        let elite = { type: 'tie_fighter', x: 500, y: 340, r: 17.25, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0, isElite: true, maxHp: 2, hp: 2 };
+        targets = [elite];
+        ship.x = 500; ship.y = 300; mouse.x = 500; mouse.y = 340; mouse.leftDown = true; fireCooldown = 0; invulnTimer = 0;
+        let scoreBefore = score;
+        update(0.016);
+        if (!targets.includes(elite)) throw new Error('an elite was destroyed by a single hit');
+        if (elite.hp !== 1) throw new Error('elite hp did not decrement on the first hit');
+        fireCooldown = 0;
+        update(0.016);
+        mouse.leftDown = false;
+        if (targets.includes(elite)) throw new Error('an elite survived a second hit');
+        let eliteGain = score - scoreBefore;
+        // A normal tie_fighter of the same difficulty/combo state, for comparison.
+        startGame('xwing');
+        let normal = { type: 'tie_fighter', x: 500, y: 340, r: 15, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0 };
+        targets = [normal];
+        ship.x = 500; ship.y = 300; mouse.x = 500; mouse.y = 340; mouse.leftDown = true; fireCooldown = 0; invulnTimer = 0;
+        scoreBefore = score;
+        update(0.016);
+        mouse.leftDown = false;
+        let normalGain = score - scoreBefore;
+        if (eliteGain <= normalGain) throw new Error('elite kill (' + eliteGain + ') did not pay more than a normal kill (' + normalGain + ')');
+    });
+
+    test('elites spawn rarely among eligible ship types, sized up and marked in gold', () => {
+        gameDifficulty = 'moderate';
+        startGame('xwing');
+        targets = [];
+        for (let i = 0; i < 400; i++) spawnTarget('tie_fighter', 15, 1.0);
+        let elites = targets.filter(t => t.isElite);
+        if (elites.length === 0) throw new Error('no elites spawned across 400 rolls -- the chance may be broken');
+        if (elites.length > 60) throw new Error('elites spawned far too often (' + elites.length + '/400) for a rare variant');
+        elites.forEach(e => {
+            if (e.hp !== 2 || e.maxHp !== 2) throw new Error('an elite did not get the tougher HP pool');
+            if (e.r <= 15) throw new Error('an elite was not sized up from its base radius');
+        });
+    });
+
+    test('a wounded 2D boss trails escalating sparks and smoke before it ever breaks away', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 20; startLevel();
+        let boss = targets.find(t => t.type && t.type.startsWith('boss'));
+        targets = [boss];
+        // 60% HP: wounded enough to clear both the spark (>12%) and smoke (>30%) thresholds,
+        // but safely above the 50% pursuit line so the fight stays in 2D for this assertion.
+        boss.hp = Math.ceil(boss.maxHp * 0.6);
+        particles = [];
+        // Both effects are probabilistic per frame (a few percent chance each), so running a
+        // fixed number of frames and hoping is a real, if rare, flake -- confirmed by hand: this
+        // exact test failed maybe 1 run in several hundred. Forcing Math.random() to 0 makes
+        // every `Math.random() < chance` check trip deterministically instead of leaving it to
+        // luck, as long as the underlying chance is genuinely > 0 (which is what's actually being
+        // tested here -- that a wounded boss's spawn chance is nonzero, not the exact odds).
+        const nativeRandom = Math.random;
+        Math.random = () => 0;
+        try { for (let f = 0; f < 5; f++) update(0.016); }
+        finally { Math.random = nativeRandom; }
+        if (bossPursuit) throw new Error('test setup problem: the boss broke away before the assertion ran');
+        if (particles.length === 0) throw new Error('a visibly wounded boss produced no damage particles');
+        if (!particles.some(p => p.isSmoke)) throw new Error('a heavily-enough-wounded boss never trailed smoke');
+    });
+
+    test('Fleet Battle triggers every 6th filler level and never on a boss or hyperspace level', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing');
+        [6, 12, 18, 24, 36, 48].forEach(lvl => {
+            level = lvl; startLevel();
+            if (!fleetBattleActive) throw new Error('level ' + lvl + ' should have been a Fleet Battle');
+        });
+        // 30 and 42 are both %6===0 but collide with a boss level (30) or hyperspace (42) --
+        // those must win, not the Fleet Battle check.
+        [5, 7, 10, 14, 20, 30, 42].forEach(lvl => {
+            level = lvl; startLevel();
+            if (fleetBattleActive) throw new Error('level ' + lvl + ' should not have been a Fleet Battle');
+        });
+    });
+
+    test('a Fleet Battle spawns wingmen, background capital ships, and a denser enemy wave', () => {
+        gameDifficulty = 'moderate';
+        startGame('xwing'); level = 12; startLevel();
+        if (allies.length !== 2) throw new Error('expected 2 wingmen, got ' + allies.length);
+        if (capitalShips.length !== 2) throw new Error('expected 2 background capital ships, got ' + capitalShips.length);
+        if (!capitalShips.some(c => c.side === 'ally') || !capitalShips.some(c => c.side === 'enemy')) throw new Error('capital ships should be one per side');
+        if (targets.length < 4) throw new Error('a Fleet Battle should field a real wave, got only ' + targets.length + ' targets');
+    });
+
+    test('wingmen engage the nearest enemy and their kills count for the player', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 12; startLevel();
+        // Isolate one enemy, park a wingman right next to it, and let it fire without any other
+        // targets competing for "nearest enemy."
+        let enemy = { type: 'tie_fighter', x: 500, y: 375, r: 15, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0 };
+        targets = [enemy];
+        allies[0].x = 470; allies[0].y = 375; allies[0].fireTimer = 0;
+        let scoreBefore = score;
+        for (let f = 0; f < 90 && targets.includes(enemy); f++) update(0.016);
+        if (targets.includes(enemy)) throw new Error('the wingman never landed a shot on the isolated enemy in 90 frames');
+        if (score <= scoreBefore) throw new Error("a wingman's kill did not score for the player");
+    });
+
+    test('wingmen take damage from enemy fire and can be lost', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 12; startLevel();
+        let ally = allies[0];
+        let hpBefore = ally.hp;
+        enemyBullets = [{ x: ally.x, y: ally.y, xv: 0, yv: 0, range: 100 }];
+        update(0.016);
+        if (ally.hp !== hpBefore - 1) throw new Error('a wingman did not take damage from an enemy bullet');
+        ally.hp = 1;
+        enemyBullets = [{ x: ally.x, y: ally.y, xv: 0, yv: 0, range: 100 }];
+        update(0.016);
+        if (allies.includes(ally)) throw new Error('a wingman at 0 hp was not removed from the fleet');
+    });
+
+    test('Fleet Battle state clears between levels and on quit', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 12; startLevel();
+        if (!fleetBattleActive || allies.length === 0) throw new Error('test setup problem: the Fleet Battle never engaged');
+        level = 13; startLevel();   // an ordinary filler level
+        if (fleetBattleActive) throw new Error('fleetBattleActive leaked into a non-Fleet-Battle level');
+        if (allies.length !== 0 || capitalShips.length !== 0) throw new Error('wingmen/capital ships leaked into the next level');
+    });
+
     ['easy', 'moderate', 'hard', 'insane'].forEach(diff => {
         [1, 5, 7, 10, 14, 15, 20, 21, 25, 26, 30, 35, 40].forEach(lvl => {
             test(`gameplay: ${diff} / level ${lvl}`, () => {
@@ -367,14 +495,18 @@
 
         // Wound it just past the threshold with a single shot.
         boss.hp = Math.ceil(boss.maxHp * 0.5) + 1;
-        ship.x = boss.x - 120; ship.y = boss.y;
-        mouse.leftDown = true; fireCooldown = 0;
-        // Re-aim at the boss's live position every frame rather than a one-time snapshot -- a
-        // dreadnought carries its own slow drift velocity, and a fixed aim point taken once
-        // before a 200-frame loop is exactly the kind of test that passes 99% of the time and
-        // then flakes the one time the boss's random spawn velocity happens to carry it far
-        // enough off that stale line to miss for the whole loop.
-        for (let f = 0; f < 200 && !bossPursuit; f++) { mouse.x = boss.x; mouse.y = boss.y; update(0.016); }
+        // Point-blank and invulnerable: this test is about the hit -> threshold -> pursuit
+        // pipeline, not about realistic aim under fire (covered elsewhere). A shot fired from
+        // 120px away still needs several frames to travel there, and re-aiming every frame only
+        // fixes the *angle* -- the bullet's own trajectory is still fixed at the moment it's
+        // fired, so it can still miss a boss that drifts (even at the dreadnought's own slow
+        // velocity) during that flight window. That's what was still flaking here. Firing from
+        // point-blank range removes the multi-frame-travel dependency entirely instead of
+        // continuing to patch around it, and invulnTimer keeps contact-ram damage at this range
+        // from interfering with the outcome.
+        ship.x = boss.x - 40; ship.y = boss.y; mouse.x = boss.x; mouse.y = boss.y;
+        mouse.leftDown = true; fireCooldown = 0; invulnTimer = 999;
+        for (let f = 0; f < 30 && !bossPursuit; f++) { mouse.x = boss.x; mouse.y = boss.y; update(0.016); }
         mouse.leftDown = false;
         if (!bossPursuit) throw new Error('boss never broke away into a pursuit');
         if (!is3DMode) throw new Error('pursuit did not switch to the cockpit view');

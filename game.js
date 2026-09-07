@@ -453,6 +453,11 @@ const BOSS_DISPLAY_NAMES = {
 // perspective projection as everything else in targets3D rather than the 2D particle system.
 let bossEffects3D = [];
 
+// Fleet Battle: a large-scale-feeling filler level -- allied wingmen fighting alongside the
+// player, and a pair of capital ships trading fire in the background purely for atmosphere.
+// Triggered on filler levels only (never a boss level or hyperspace), see startLevel().
+let fleetBattleActive = false, allies = [], capitalShips = [];
+
 // A hit lands as a small spark burst; the killing blow as a proper multi-stage explosion --
 // a bright fireball core, a slower secondary flare a beat behind it (the classic staggered
 // boss-death pop), an outward ring of embers, and a smoke cloud left hanging where it died.
@@ -622,7 +627,7 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; is3DMode = false; targets3D = []; bossEffects3D = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; is3DMode = false; targets3D = []; bossEffects3D = []; fleetBattleActive = false; allies = []; capitalShips = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -763,6 +768,66 @@ const HAZARD_LIGHT_POINTS = {
     tie_interceptor: [[0.5, -1.0, 0], [0.5, 1.0, 1.7]],
     sentinel: [[0.4, 0, 0]],
 };
+// Ships eligible to roll as a rare "elite" -- tougher, slightly bigger, worth noticing. Bosses
+// and asteroids have their own equivalents (the pursuit mechanic and ore veins).
+const ELITE_ELIGIBLE_TYPES = ["tie_fighter", "tie_interceptor", "tie_advanced", "star_destroyer", "sentinel"];
+
+// A compact wingman fighter for Fleet Battle levels -- deliberately its own light blue/white
+// palette, distinct from both the player's own ships and every red-hazard-lit enemy, so "whose
+// side is this on" reads instantly in a busy fight.
+function drawAllyFighter(ctx, r, thrusting) {
+    popHalo(ctx, r, "#66ccff", 0.4);
+    let hullGrad = ctx.createLinearGradient(-r, -r*0.3, r, r*0.3);
+    hullGrad.addColorStop(0, "#dfefff"); hullGrad.addColorStop(0.5, "#a8d4f5"); hullGrad.addColorStop(1, "#3d6a8a");
+    ctx.fillStyle = hullGrad; ctx.strokeStyle = "#1c3d52"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(r*1.3, 0); ctx.lineTo(-r*0.3, -r*0.9); ctx.lineTo(-r*0.9, -r*0.5); ctx.lineTo(-r*0.5, 0);
+    ctx.lineTo(-r*0.9, r*0.5); ctx.lineTo(-r*0.3, r*0.9); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(r*1.25, -r*0.03); ctx.lineTo(-r*0.3, -r*0.88); ctx.stroke();
+    ctx.fillStyle = "#0a1822"; ctx.beginPath(); ctx.ellipse(r*0.15, 0, r*0.28, r*0.12, 0, 0, Math.PI*2); ctx.fill();
+    applyGlow(ctx, "#66ccff", 6); ctx.fillStyle = "#aee9ff"; ctx.beginPath(); ctx.arc(-r*0.15, 0, r*0.08, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+    if (thrusting) { applyGlow(ctx, "#66ccff", 15); ctx.fillStyle = "#dff7ff"; ctx.beginPath(); ctx.arc(-r*0.95, -r*0.3, 3, 0, Math.PI*2); ctx.arc(-r*0.95, r*0.3, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); }
+}
+
+// The Fleet Battle backdrop: two large, dim, non-interactive hulls (never collidable, never a
+// target) trading a beam across the field every few seconds -- purely atmospheric scale-setting,
+// like the capital ships exchanging fire behind a Star Wars dogfight.
+function drawCapitalShip(ctx, c) {
+    let sway = Math.sin(c.driftPhase) * 8;
+    let s = c.scale, isAlly = c.side === "ally";
+    let baseColor = isAlly ? "#3a5a72" : "#5a2a2a";
+    let accentColor = isAlly ? "#66ccff" : "#ff5555";
+    ctx.save();
+    ctx.translate(c.x, c.y + sway);
+    ctx.globalAlpha = 0.55;
+    ctx.scale(s, s);
+    let grad = ctx.createLinearGradient(-20, -6, 20, 6);
+    grad.addColorStop(0, baseColor); grad.addColorStop(1, "#0a0d10");
+    ctx.fillStyle = grad; ctx.strokeStyle = "#000"; ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    if (isAlly) { ctx.moveTo(22, 0); ctx.lineTo(-6, -9); ctx.lineTo(-20, -6); ctx.lineTo(-20, 6); ctx.lineTo(-6, 9); ctx.closePath(); }
+    else { ctx.moveTo(-22, 0); ctx.lineTo(6, -9); ctx.lineTo(20, -6); ctx.lineTo(20, 6); ctx.lineTo(6, 9); ctx.closePath(); }
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = accentColor;
+    [-8, -2, 4, 10].forEach(x => ctx.fillRect((isAlly ? x : -x) - 0.4, -0.4, 0.8, 0.8));
+    ctx.restore();
+
+    if (c.firing > 0) {
+        let other = capitalShips.find(o => o !== c);
+        if (other) {
+            let otherSway = Math.sin(other.driftPhase) * 8;
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, c.firing / 0.25) * 0.75;
+            ctx.strokeStyle = accentColor; ctx.lineWidth = 2;
+            applyGlow(ctx, accentColor, 10);
+            ctx.beginPath(); ctx.moveTo(c.x, c.y + sway); ctx.lineTo(other.x, other.y + otherSway); ctx.stroke();
+            clearGlow(ctx);
+            ctx.restore();
+        }
+    }
+}
 
 function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, customY = null, customAng = null) {
     let sx = customX !== null ? customX : (ship.x || canvas.width/2); let sy = customY !== null ? customY : (ship.y || canvas.height/2);
@@ -1821,6 +1886,12 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
         // A rare mineral-rich vein, independent of size -- worth seeking out for the bonus scrap.
         if (Math.random() < 0.08) t.isOre = true;
     }
+    // A rare "elite" among the common fighter roster -- the ore asteroid's equivalent for ships.
+    // Tougher, slightly bigger, and worth noticing (a gold rim light and hazard glow mark it out
+    // at a glance) rather than looking identical to the fodder it's mixed in with.
+    if (ELITE_ELIGIBLE_TYPES.includes(type) && Math.random() < 0.05) {
+        t.isElite = true; t.maxHp = 2; t.hp = 2; t.r = baseR * 1.15;
+    }
     targets.push(t);
 }
 
@@ -2081,7 +2152,7 @@ function startGame(shipId, mode) {
     if (gameMode === "rush") diffScoreMult *= 1.3;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0;
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; fleetBattleActive = false; allies = []; capitalShips = [];
     runKills = 0; runBestCombo = 1; runGrazes = 0;
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
     
@@ -2172,12 +2243,42 @@ function spawnBossEncounter(bossKind, diffMult, speedMod) {
     }
 }
 
+// A large-scale-feeling engagement: two wingmen fight alongside the player, a denser enemy wave
+// than a normal filler level, and a pair of capital ships trading fire in the background purely
+// for atmosphere (not interactive -- see the fleetBattleActive block in update()/render()).
+function spawnFleetBattle(diffMult, speedMod) {
+    fleetBattleActive = true;
+    spawnText(canvas.width/2, canvas.height/2 - 30, "FLEET ENGAGEMENT", "#66ccff", 28);
+    spawnText(canvas.width/2, canvas.height/2 + 10, "WINGMEN INBOUND -- HOLD THE LINE", "#ffcc00", 15);
+
+    allies.push({ x: ship.x - 60, y: ship.y - 40, xv: 0, yv: 0, angle: 0, r: 13, hp: 2, maxHp: 2, fireTimer: 0.6 + Math.random()*0.6 });
+    allies.push({ x: ship.x + 60, y: ship.y - 40, xv: 0, yv: 0, angle: 0, r: 13, hp: 2, maxHp: 2, fireTimer: 0.6 + Math.random()*0.6 });
+
+    capitalShips.push({ side: "ally", x: canvas.width*0.08, y: canvas.height*0.22, scale: 3.0, driftPhase: Math.random()*Math.PI*2, beamTimer: 2 + Math.random()*2, firing: 0 });
+    capitalShips.push({ side: "enemy", x: canvas.width*0.92, y: canvas.height*0.78, scale: 3.3, driftPhase: Math.random()*Math.PI*2, beamTimer: 3 + Math.random()*2, firing: 0 });
+
+    let numAsteroids = Math.floor((1 + Math.floor(level / 3)) * diffMult);
+    for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
+
+    let numShips = Math.max(4, Math.floor(Math.floor(level / 2) * diffMult));
+    for (let i = 0; i < numShips; i++) {
+        let rand = Math.random();
+        if (rand < 0.35) spawnTarget("tie_fighter", 15, speedMod * 1.2);
+        else if (rand < 0.65) spawnTarget("tie_interceptor", 15, speedMod * 1.8);
+        else if (rand < 0.85) spawnTarget("tie_advanced", 18, speedMod * 0.9);
+        else spawnTarget("star_destroyer", 50, speedMod);
+    }
+    let numSentinels = Math.max(1, Math.floor(Math.floor(level / 5) * diffMult));
+    for (let i = 0; i < numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.1);
+}
+
 function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
     // Swarm cleared before its trickle finished bleeds its leftovers into the next level.
     sentinelSpawnQueue = 0;
     bossPursuit = false; bossDeathTimer = 0;
+    fleetBattleActive = false; allies = []; capitalShips = [];
     ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
@@ -2227,6 +2328,10 @@ function startLevel() {
             spawnText(canvas.width/2, 80, "WAVE " + level, "#ffcc00", 24);
         } else if (level % 5 === 0 && !is3DMode) {
             spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
+        } else if (level % 6 === 0 && level % 5 !== 0) {
+            // Every 6th filler level (never a boss level -- %5===0 always wins first) becomes a
+            // Fleet Battle instead of a normal patrol.
+            spawnFleetBattle(diffMult, speedMod);
         } else {
             let numAsteroids = Math.floor((2 + Math.floor(level / 2)) * diffMult); if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
             for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
@@ -2527,7 +2632,7 @@ function update(dt) {
         if(dist < ship.r + 10) { let gain = Math.round(10 * runScrapMult); currentRunScrap += gain; playSfx('scrap'); spawnText(s.x, s.y, "+" + gain, "#ff00ff", 12); scrapDrops.splice(i,1); updateUI(); }
     }
 
-    for (let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.xv; p.y += p.yv; p.life -= dt * 2.0; if (p.isEmp) p.size += dt * 800; if (p.life <= 0) particles.splice(i, 1); }
+    for (let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.xv; p.y += p.yv; p.life -= dt * 2.0; if (p.isEmp) p.size += dt * 800; if (p.isSmoke) p.size += dt * 6; if (p.life <= 0) particles.splice(i, 1); }
     for (let i = lightTrails.length - 1; i >= 0; i--) { let p = lightTrails[i]; p.life -= dt; if (p.life <= 0) lightTrails.splice(i, 1); }
 
     for (let i = bullets.length - 1; i >= 0; i--) { bullets[i].x += bullets[i].xv; bullets[i].y += bullets[i].yv; wrap(bullets[i]); bullets[i].range -= Math.hypot(bullets[i].xv, bullets[i].yv); if (bullets[i].range < 0) bullets.splice(i, 1); }
@@ -2536,6 +2641,18 @@ function update(dt) {
         eb.x += eb.xv * slowFactor; eb.y += eb.yv * slowFactor; wrap(eb); eb.range -= Math.hypot(eb.xv, eb.yv) * slowFactor;
         let d = Math.hypot(ship.x - eb.x, ship.y - eb.y);
         if (d < ship.r + 2 && invulnTimer <= 0) { damagePlayer(15); enemyBullets.splice(i, 1); continue; }
+        if (fleetBattleActive) {
+            let hitAlly = allies.find(a => Math.hypot(a.x - eb.x, a.y - eb.y) < a.r + 2);
+            if (hitAlly) {
+                hitAlly.hp--; spawnParticles(hitAlly.x, hitAlly.y, "#66ccff", 5); enemyBullets.splice(i, 1);
+                if (hitAlly.hp <= 0) {
+                    playSfx('boom'); shake += 6; spawnParticles(hitAlly.x, hitAlly.y, "#ff5500", 18);
+                    spawnText(hitAlly.x, hitAlly.y, "WINGMAN LOST", "#ff5555", 14);
+                    allies.splice(allies.indexOf(hitAlly), 1);
+                }
+                continue;
+            }
+        }
         // Close call: dodging was previously worth nothing, so the only scoring verb was killing.
         // Each bullet can graze once, and only while it's genuinely dangerous.
         if (!eb.grazed && invulnTimer <= 0 && d < ship.r + 26 && d > ship.r + 5) {
@@ -2569,6 +2686,21 @@ function update(dt) {
         t.x += t.xv * slowFactor; t.y += t.yv * slowFactor; t.angle += t.rotSpeed * dt;
         if (t.hitFlash > 0) t.hitFlash -= dt;
 
+        // A boss in the open 2D fight used to look pristine right up until the moment it crossed
+        // the pursuit threshold and fled -- no visual buildup at all. It now trails sparks and
+        // smoke that intensify with damage, so the eventual "IT'S BREAKING AWAY!" reads as the
+        // payoff of a fight that's visibly been going badly for it, not a sudden state flip.
+        if (t.type.startsWith("boss") && t.maxHp) {
+            let hurtFrac = 1 - (t.hp / t.maxHp);
+            if (hurtFrac > 0.12 && Math.random() < hurtFrac * 0.10) {
+                let ox = (Math.random()-0.5)*t.r*1.3, oy = (Math.random()-0.5)*t.r*1.1;
+                spawnParticles(t.x+ox, t.y+oy, "#ff8833", 2, 0.5);
+            }
+            if (hurtFrac > 0.3 && Math.random() < hurtFrac * 0.06) {
+                let ox = (Math.random()-0.5)*t.r*1.2, oy = (Math.random()-0.5)*t.r*1.0;
+                particles.push({ x: t.x+ox, y: t.y+oy, xv: (Math.random()-0.5)*0.6, yv: -0.4 - Math.random()*0.4, life: 1.6, color: "#333", size: 6 + Math.random()*8, isSmoke: true });
+            }
+        }
         if (t.type === "sentinel") { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); t.angle = angToPlayer; let spd = t.chaseSpeed || 3; t.xv = Math.cos(angToPlayer) * spd; t.yv = Math.sin(angToPlayer) * spd; }
         if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); enemyBullets.push({ x: t.x, y: t.y, xv: 6 * Math.cos(angToPlayer), yv: 6 * Math.sin(angToPlayer), range: canvas.width * 0.8 }); playSfx('enemyShoot'); t.fireTimer = 2.0; } }
         if (t.type === "boss_station") {
@@ -2675,6 +2807,51 @@ function update(dt) {
         }
     }
 
+    if (fleetBattleActive) {
+        // Each wingman orbits toward whichever enemy is nearest, the same approach-and-circle
+        // pattern already used for hive minions, and fires on it directly into the shared
+        // `bullets` array -- their kills count as the player's, which keeps the collision and
+        // scoring code completely unchanged rather than needing a parallel ally-bullet system.
+        for (let i = allies.length - 1; i >= 0; i--) {
+            let a = allies[i];
+            let nearest = null, nearestDist = Infinity;
+            targets.forEach(en => { let d = Math.hypot(en.x - a.x, en.y - a.y); if (d < nearestDist) { nearestDist = d; nearest = en; } });
+            if (nearest) {
+                let angToTarget = Math.atan2(nearest.y - a.y, nearest.x - a.x);
+                let preferredDist = 160;
+                let approachAng = nearestDist > preferredDist ? angToTarget : angToTarget + Math.PI;
+                let tangentAng = angToTarget + Math.PI / 2;
+                let vx = Math.cos(approachAng) * 0.5 + Math.cos(tangentAng) * 0.5;
+                let vy = Math.sin(approachAng) * 0.5 + Math.sin(tangentAng) * 0.5;
+                let norm = Math.hypot(vx, vy) || 1;
+                let spd = 2.3;
+                a.xv = (vx / norm) * spd; a.yv = (vy / norm) * spd; a.angle = angToTarget;
+                a.fireTimer -= dt;
+                if (a.fireTimer <= 0 && nearestDist < 420) {
+                    bullets.push({ x: a.x, y: a.y, xv: 10 * Math.cos(angToTarget), yv: 10 * Math.sin(angToTarget), range: canvas.width * 0.8, isAlly: true });
+                    a.fireTimer = 1.1 + Math.random() * 0.7;
+                }
+            } else {
+                // Nothing left to engage -- hold loosely near the player instead of drifting off.
+                let d = Math.hypot(ship.x - a.x, ship.y - a.y);
+                let angToPlayer = Math.atan2(ship.y - a.y, ship.x - a.x);
+                if (d > 120) { a.xv = Math.cos(angToPlayer) * 1.2; a.yv = Math.sin(angToPlayer) * 1.2; }
+                else { a.xv *= 0.9; a.yv *= 0.9; }
+            }
+            a.x += a.xv; a.y += a.yv; wrap(a);
+        }
+
+        capitalShips.forEach(c => {
+            c.driftPhase += dt * 0.15;
+            c.beamTimer -= dt;
+            if (c.beamTimer <= 0) {
+                c.firing = 0.25; c.beamTimer = 3.5 + Math.random() * 2.5;
+                playSfx('enemyShoot'); shake += 1.5;
+            }
+            if (c.firing > 0) c.firing -= dt;
+        });
+    }
+
     for (let i = targets.length - 1; i >= 0; i--) {
         let t1 = targets[i];
         if (t1.type !== "asteroid" && t1.type !== "satellite" && !t1.type.startsWith("boss")) {
@@ -2737,7 +2914,10 @@ function update(dt) {
                     t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; updateUI(); hit = true;
                     // A boulder chips rather than showing a damage number -- rock-grey debris and
                     // a widening crack instead of the generic "-1" every other multi-hit target uses.
+                    // An elite sparks gold instead of white, confirming "this one's tougher" the
+                    // instant it survives a hit that would have dropped anything else in one shot.
                     if (t.type === "asteroid") { spawnParticles(bullets[i].x, bullets[i].y, "#9a9a92", 6); spawnText(t.x, t.y, "CRACKING", "#ccaa77", 12); }
+                    else if (t.isElite) { spawnParticles(bullets[i].x, bullets[i].y, "#ffcc33", 6); spawnText(t.x, t.y, `-${dmg}`, "#ffcc33"); }
                     else { spawnText(t.x, t.y, `-${dmg}`, "#fff"); spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); }
                     // A wounded boss breaks for the asteroid field and the fight moves to the
                     // cockpit. Swarm "bosses" are excluded -- there is no single thing to chase.
@@ -2756,10 +2936,14 @@ function update(dt) {
                 combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
 
                 let diffMod = 1 + (level * 0.1);
+                // Elites pay out roughly double, on top of whatever the type itself pays -- the
+                // ship-side equivalent of an ore asteroid's guaranteed bonus.
+                let eliteMult = t.isElite ? 2.2 : 1;
+                if (t.isElite) spawnText(t.x, t.y - 18, "ELITE DOWN", "#ffcc33", 14);
                 if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
-                else if (t.type === "star_destroyer") { score += diffScoreMult *100*combo; spawnScrap(t.x, t.y, 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
-                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += diffScoreMult *50*combo; spawnScrap(t.x, t.y, 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
-                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += diffScoreMult *25*combo; spawnScrap(t.x, t.y, 1); }
+                else if (t.type === "star_destroyer") { score += diffScoreMult *100*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 6 : 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
+                else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += diffScoreMult *50*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 4 : 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
+                else if (t.type === "tie_fighter" || t.type === "sentinel") { score += diffScoreMult *25*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 3 : 1); }
                 else if (t.type === "satellite") { score += diffScoreMult *75*combo; spawnScrap(t.x, t.y, 5); }
                 else if (t.type === "hive_minion") {
                     if (t.isQueen) { score += diffScoreMult *300*combo; spawnScrap(t.x, t.y, 4); shake = 15; unlockAchievement('hive_breaker'); }
@@ -3331,6 +3515,10 @@ function render() {
         });
     }
 
+    // Capital ships sit behind everything -- large, dim, non-interactive silhouettes trading an
+    // occasional beam for atmosphere, like the background fleet exchange in a Star Wars battle.
+    if (fleetBattleActive) capitalShips.forEach(c => drawCapitalShip(ctx, c));
+
     lightTrails.forEach(t => { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = `rgba(0, 255, 255, ${t.life / 8.0})`; ctx.beginPath(); ctx.arc(t.x, t.y, 6, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); });
     scrapDrops.forEach(s => { applyGlow(ctx, "#ff00ff", 10); ctx.fillStyle = `rgba(255, 0, 255, ${s.life/8})`; ctx.fillRect(s.x-3, s.y-3, 6, 6); clearGlow(ctx); });
 
@@ -3372,10 +3560,20 @@ function render() {
         else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
         else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t);
         if (!skipShading) {
-            applyRimLight(ctx, t.r, { width: t.type.startsWith("boss") ? 0.04 : 0.06 });
+            // An elite reads gold instead of the default white rim / red hazard glow -- visible
+            // at a glance across a busy field, without needing a whole separate hull palette.
+            applyRimLight(ctx, t.r, { width: t.type.startsWith("boss") ? 0.04 : 0.06, color: t.isElite ? "rgba(255, 210, 90, 0.55)" : undefined });
             let lights = HAZARD_LIGHT_POINTS[t.type];
-            if (lights && lights.length) drawHazardLights(ctx, t.r, lights, { color: t.type.startsWith("boss") ? "#ff5555" : "#ff3333" });
+            if (lights && lights.length) drawHazardLights(ctx, t.r, lights, { color: t.isElite ? "#ffcc33" : (t.type.startsWith("boss") ? "#ff5555" : "#ff3333") });
         }
+        ctx.restore();
+    });
+
+    if (fleetBattleActive) allies.forEach(a => {
+        ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.angle);
+        applyAmbientOcclusion(ctx, a.r, 0.22, 1.0);
+        drawAllyFighter(ctx, a.r, Math.hypot(a.xv, a.yv) > 0.3);
+        applyRimLight(ctx, a.r, { width: 0.07, color: "rgba(140, 230, 255, 0.5)" });
         ctx.restore();
     });
 
@@ -3386,9 +3584,12 @@ function render() {
         ctx.fillStyle = color; ctx.font = "bold 16px Courier"; ctx.fillText(p.type, -5, 5); clearGlow(ctx); ctx.restore();
     });
 
-    particles.forEach(p => { 
-        ctx.globalAlpha = p.life; 
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
         if (p.isEmp) { ctx.strokeStyle = p.color; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.stroke(); }
+        // A soft drifting puff rather than a streaking line -- used for the wound-smoke trailing
+        // a damaged boss, where a bright line reads as a spark and a puff reads as smoke.
+        else if (p.isSmoke) { ctx.globalAlpha = p.life * 0.4; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); }
         else { ctx.strokeStyle = p.color; ctx.lineWidth = p.size; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.xv * 2, p.y - p.yv * 2); ctx.stroke(); }
     }); ctx.globalAlpha = 1.0;
 
@@ -3400,7 +3601,10 @@ function render() {
         if (b.isHack) { applyGlow(ctx, "#00ff00", 12); ctx.fillStyle = "#00ff00"; ctx.font = "bold 14px Courier New"; ctx.fillText(Math.random() > 0.5 ? "1" : "0", -4, 4); clearGlow(ctx); }
         else if (b.isEmpBolt) { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(0, 0, b.r || 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, (b.r || 6) + 3, 0, Math.PI * 2); ctx.stroke(); clearGlow(ctx); }
         else {
-            let laserColor = chaosTimer > 0 ? `hsl(${(frames*8 + bi*40)%360},100%,60%)` : ShipDesigns[selectedShipType].laserColor;
+            // A wingman's shots read as their own -- cyan, matching their hull -- rather than
+            // borrowing the player's laser color, which would make allied fire on-screen look
+            // like the player is somehow shooting from two places at once.
+            let laserColor = b.isAlly ? "#66ccff" : (chaosTimer > 0 ? `hsl(${(frames*8 + bi*40)%360},100%,60%)` : ShipDesigns[selectedShipType].laserColor);
             ctx.fillStyle = laserColor; applyGlow(ctx, laserColor, 10); ctx.beginPath(); ctx.arc(0, 0, b.r || 2, 0, Math.PI * 2); ctx.fill(); clearGlow(ctx);
         }
         ctx.restore();
