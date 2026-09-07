@@ -59,9 +59,53 @@
     });
 
     test('every enemy/asteroid/satellite design draws without throwing', () => {
-        ['tie_advanced', 'star_destroyer', 'tie_interceptor', 'tie_fighter', 'satellite', 'asteroid'].forEach(id => {
+        ['tie_advanced', 'star_destroyer', 'tie_interceptor', 'tie_fighter', 'satellite', 'asteroid', 'sentinel'].forEach(id => {
             TargetDesigns[id].draw(document.createElement('canvas').getContext('2d'), 20, { vertices: [], craters: [], facets: [], baseColor: '#444', shadowColor: '#111' });
         });
+    });
+
+    test('a boulder asteroid and an ore asteroid draw without throwing in every damage state', () => {
+        const ctx2 = document.createElement('canvas').getContext('2d');
+        let boulder = { ...generateJaggedAsteroid(60), r: 60, maxHp: 2, hp: 2 };
+        TargetDesigns.asteroid.draw(ctx2, 60, boulder);
+        boulder.hp = 1;   // chipped once -- exercises the crack-line branch
+        TargetDesigns.asteroid.draw(ctx2, 60, boulder);
+        if (!boulder.crackLine) throw new Error('a damaged boulder never generated a crack line');
+        let ore = { ...generateJaggedAsteroid(35), r: 35, isOre: true };
+        TargetDesigns.asteroid.draw(ctx2, 35, ore);
+        if (!ore.veins || ore.veins.length === 0) throw new Error('an ore asteroid never generated its vein geometry');
+    });
+
+    test('boulders take two hits to crack open; ore veins pay a guaranteed scrap bonus', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing');
+        // A boulder: big enough (r>=50) to get 2 HP, and must survive exactly one hit.
+        let boulder = { type: 'asteroid', x: 500, y: 375, r: 55, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0 };
+        Object.assign(boulder, generateJaggedAsteroid(55));
+        boulder.maxHp = 2; boulder.hp = 2;
+        targets = [boulder];
+        ship.x = 500; ship.y = 300; mouse.x = 500; mouse.y = 375; mouse.leftDown = true; fireCooldown = 0; invulnTimer = 0;
+        update(0.016);
+        if (!targets.includes(boulder)) throw new Error('a boulder was destroyed by a single hit');
+        if (boulder.hp !== 1) throw new Error('boulder hp did not decrement on the first hit');
+        fireCooldown = 0;   // simulate firing again rather than waiting out the real fire-rate timer
+        update(0.016);
+        if (targets.includes(boulder)) throw new Error('a boulder survived a second hit');
+        mouse.leftDown = false;
+
+        // An ore asteroid: guaranteed scrap on destroy, regardless of the normal 50/50 roll.
+        startGame('xwing');
+        let ore = { type: 'asteroid', x: 500, y: 375, r: 20, xv: 0, yv: 0, angle: 0, rotSpeed: 0, stunned: 0 };
+        Object.assign(ore, generateJaggedAsteroid(20));
+        ore.isOre = true;
+        targets = [ore]; scrapDrops = [];
+        ship.x = 500; ship.y = 300; mouse.x = 500; mouse.y = 375; mouse.leftDown = true; fireCooldown = 0; invulnTimer = 0;
+        // Ore's small radius means the bullet needs a few frames to actually cross the gap,
+        // unlike the point-blank boulder above -- loop until it lands rather than assuming frame 1.
+        for (let f = 0; f < 30 && targets.includes(ore); f++) update(0.016);
+        mouse.leftDown = false;
+        if (targets.includes(ore)) throw new Error('test setup problem: the shot never reached the ore asteroid');
+        if (scrapDrops.length === 0) throw new Error('an ore asteroid did not guarantee a scrap drop');
     });
 
     ['easy', 'moderate', 'hard', 'insane'].forEach(diff => {
@@ -380,10 +424,19 @@
         gameDifficulty = 'easy';
         startGame('xwing'); level = 7; startLevel(); gameState = 'PLAYING';
         render3D();
-        // Sample a patch of open sky (upper-left quadrant, away from the cockpit airframe and HUD).
-        let sample = ctx.getImageData(Math.round(canvas.width * 0.15), Math.round(canvas.height * 0.12), 1, 1).data;
-        let brightness = (sample[0] + sample[1] + sample[2]) / 3;
-        if (brightness > 40) throw new Error('background is too bright for deep space: rgb(' + sample[0] + ',' + sample[1] + ',' + sample[2] + ')');
+        // Average brightness over a patch of open sky rather than trusting a single pixel -- by
+        // this point in the suite the starfield has been advanced by every earlier test that
+        // called update3D, so a 1x1 sample can land squarely on one bright star by pure chance
+        // and fail a scene that is, on the whole, exactly as dark as it should be. Averaging a
+        // region is robust to any one star while still catching a genuine backdrop-wide wash.
+        // Centered horizontally and sitting between the HUD banner and the reticle -- clear of
+        // the cockpit's corner status-lamp panels and canopy rail, which are legitimately a
+        // lighter metal grey and previously dragged a corner sample's average up.
+        let block = ctx.getImageData(Math.round(canvas.width * 0.42), Math.round(canvas.height * 0.22), Math.round(canvas.width * 0.16), Math.round(canvas.height * 0.12)).data;
+        let total = 0, pixelCount = block.length / 4;
+        for (let i = 0; i < block.length; i += 4) total += (block[i] + block[i+1] + block[i+2]) / 3;
+        let avgBrightness = total / pixelCount;
+        if (avgBrightness > 25) throw new Error('background is too bright for deep space: avg ' + avgBrightness.toFixed(1));
     });
 
     test('a nuke cannot delete the pursuit boss or hand a free win', () => {

@@ -712,6 +712,58 @@ function popHalo(ctx, r, color, alpha = 0.55) {
     ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1.0; clearGlow(ctx);
 }
+// --- SHARED DIRECTIONAL LIGHTING ---
+// One fixed "sun" direction used across every ship, boss and asteroid, so the whole field reads
+// as lit by the same light source instead of each design drawing its own self-contained glow.
+// Previously only the 3D pursuit boss got this treatment; it's shared here so the 2D fight (both
+// phases of a boss encounter, plus every regular enemy and rock) looks like one consistent scene.
+const WORLD_LIGHT_ANGLE = -2.35;
+
+// A soft dark falloff toward the shadow side. Call before the hull's own fill -- on an opaque
+// design it only ever shows through at the silhouette's edges and transparent gaps, which reads
+// as a contact shadow giving the shape real weight rather than flattening it.
+function applyAmbientOcclusion(ctx, r, strength = 0.32, reach = 1.0) {
+    // reach defaults to the object's own radius, not beyond it: every design's actual silhouette
+    // is opaque and covers this gradient almost entirely, so anything wider than ~1.0 painted a
+    // visible dark ring bleeding into the empty space and stars around the object instead of
+    // staying hidden under the hull -- the one thing this is supposed to never do.
+    let ao = ctx.createRadialGradient(r * 0.22, r * 0.32, r * 0.15, 0, 0, r * reach);
+    ao.addColorStop(0, "rgba(0,0,0,0)"); ao.addColorStop(1, `rgba(0,0,0,${strength})`);
+    ctx.fillStyle = ao; ctx.beginPath(); ctx.arc(0, 0, r * reach, 0, Math.PI * 2); ctx.fill();
+}
+// A hard directional highlight along the sun-facing edge. Call after the hull's own fill.
+function applyRimLight(ctx, r, opts = {}) {
+    ctx.strokeStyle = opts.color || "rgba(215, 232, 255, 0.35)";
+    ctx.lineWidth = r * (opts.width || 0.05);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * (opts.reach || 0.97), WORLD_LIGHT_ANGLE - (opts.spread || 0.9), WORLD_LIGHT_ANGLE + (opts.spread || 0.9));
+    ctx.stroke();
+}
+// Independently-blinking running lights at fixed local points -- cheap detail that sells scale
+// and "this is a machine, not a sprite" at a glance. `points` is [localXFrac, localYFrac, phase].
+function drawHazardLights(ctx, r, points, opts = {}) {
+    points.forEach(([lx, ly, phase]) => {
+        if (Math.sin(frames * (opts.speed || 0.05) + phase * 3) > (opts.threshold || 0.5)) {
+            let col = opts.color || "#ff5555";
+            applyGlow(ctx, col, 6); ctx.fillStyle = col;
+            ctx.beginPath(); ctx.arc(r * lx, r * ly, r * (opts.size || 0.035), 0, Math.PI * 2); ctx.fill();
+            clearGlow(ctx);
+        }
+    });
+}
+// Per-type hazard light layouts, shared between the 2D fight and the 3D pursuit view.
+const HAZARD_LIGHT_POINTS = {
+    boss_station: [[0.6, -0.55, 0], [-0.6, 0.5, 1.7], [0, 0.75, 3.1]],
+    boss_mothership: [[0.7, -0.2, 0], [-0.7, 0.2, 1.7]],
+    boss_dreadnought: [[0.75, -0.3, 0], [-0.6, 0.5, 1.7]],
+    boss_carrier: [[0.8, -0.25, 0], [-0.8, 0.25, 1.7], [0, -0.3, 3.1]],
+    boss_worm: [],
+    star_destroyer: [[0.6, -0.4, 0], [-0.5, 0.5, 1.7]],
+    tie_advanced: [[0, -1.15, 0]],
+    tie_interceptor: [[0.5, -1.0, 0], [0.5, 1.0, 1.7]],
+    sentinel: [[0.4, 0, 0]],
+};
+
 function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, customY = null, customAng = null) {
     let sx = customX !== null ? customX : (ship.x || canvas.width/2); let sy = customY !== null ? customY : (ship.y || canvas.height/2);
     let ang = customAng !== null ? customAng : ship.angle + angOffset; let rOffset = isEnemy ? 0 : ship.r;
@@ -1471,11 +1523,31 @@ const TargetDesigns = {
     sentinel: {
         draw: (ctx, r, t) => {
             popHalo(ctx, r, "#ff0000", 0.5);
-            ctx.fillStyle = "#111"; ctx.strokeStyle = "#888"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r*0.6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(r*0.4, 0, 3, 0, Math.PI*2); ctx.fill(); 
-            ctx.beginPath(); ctx.moveTo(-r*0.5, -r*0.3); ctx.lineTo(-r - Math.random()*r*0.5, -r*0.8); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(-r*0.6, 0); ctx.lineTo(-r*1.2 - Math.random()*r*0.5, 0); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(-r*0.5, r*0.3); ctx.lineTo(-r - Math.random()*r*0.5, r*0.8); ctx.stroke();
+            // Beveled armored core instead of a flat disc
+            let bodyGrad = ctx.createRadialGradient(-r*0.15, -r*0.15, r*0.1, 0, 0, r*0.62);
+            bodyGrad.addColorStop(0, "#2e2e32"); bodyGrad.addColorStop(0.7, "#131315"); bodyGrad.addColorStop(1, "#050506");
+            ctx.fillStyle = bodyGrad; ctx.strokeStyle = "#888"; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(0, 0, r*0.6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            // Segmented armor spokes read as plating rather than a bare ball
+            ctx.strokeStyle = "rgba(160, 160, 160, 0.3)"; ctx.lineWidth = 1;
+            for (let i = 0; i < 6; i++) { let a = (i / 6) * Math.PI * 2; ctx.beginPath(); ctx.moveTo(Math.cos(a)*r*0.32, Math.sin(a)*r*0.32); ctx.lineTo(Math.cos(a)*r*0.56, Math.sin(a)*r*0.56); ctx.stroke(); }
+            // A pulsing sensor eye rather than a static dot -- reads as actively tracking
+            let eyePulse = 0.6 + Math.sin(frames * 0.15) * 0.4;
+            applyGlow(ctx, "#ff0000", 8); ctx.fillStyle = `rgba(255, 30, 30, ${eyePulse})`;
+            ctx.beginPath(); ctx.arc(r*0.4, 0, 3, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+            // A thin scan ring expanding outward and fading, like an active radar sweep
+            let scanPhase = (frames * 0.025) % 1;
+            ctx.strokeStyle = `rgba(255, 60, 60, ${(1 - scanPhase) * 0.35})`; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(0, 0, r * (0.65 + scanPhase * 0.7), 0, Math.PI*2); ctx.stroke();
+            // Three scuttling legs, each with a faint thruster glow at the foot since it's always
+            // moving at speed toward the player.
+            [-0.3, 0, 0.3].forEach(oy => {
+                let startY = r * oy;
+                let tipX = -r - Math.random()*r*0.5, tipY = startY * 2.6;
+                ctx.beginPath(); ctx.moveTo(-r*0.5, startY); ctx.lineTo(tipX, tipY); ctx.stroke();
+                applyGlow(ctx, "#ff6633", 5); ctx.fillStyle = "rgba(255, 140, 60, 0.6)";
+                ctx.beginPath(); ctx.arc(tipX, tipY, 1.6, 0, Math.PI*2); ctx.fill(); clearGlow(ctx);
+            });
         }
     },
     hive_minion: {
@@ -1605,6 +1677,50 @@ const TargetDesigns = {
                 });
             }
 
+            // Mineral-rich vein: a rare rock worth seeking out, marked with glowing streaks
+            // rather than a scrap-count difference the player would never notice mid-fight.
+            // Generated lazily and cached since isOre is set after generateJaggedAsteroid runs.
+            if (t.isOre) {
+                if (!t.veins) {
+                    t.veins = [];
+                    let numVeins = 2 + Math.floor(Math.random() * 2);
+                    for (let i = 0; i < numVeins; i++) {
+                        let a1 = Math.random() * Math.PI * 2, a2 = a1 + Math.PI * (0.6 + Math.random() * 0.8);
+                        t.veins.push({
+                            x1: Math.cos(a1) * r * 0.7, y1: Math.sin(a1) * r * 0.7,
+                            x2: Math.cos(a2) * r * 0.6, y2: Math.sin(a2) * r * 0.6,
+                            midOff: (Math.random() - 0.5) * r * 0.5,
+                        });
+                    }
+                }
+                let pulse = 0.5 + Math.sin(frames * 0.08) * 0.35;
+                applyGlow(ctx, "#ffcc44", 8);
+                ctx.strokeStyle = `rgba(255, 204, 68, ${0.5 + pulse * 0.4})`; ctx.lineWidth = Math.max(1, r * 0.045);
+                t.veins.forEach(v => {
+                    let mx = (v.x1 + v.x2) / 2 + v.midOff, my = (v.y1 + v.y2) / 2 - v.midOff;
+                    ctx.beginPath(); ctx.moveTo(v.x1, v.y1); ctx.quadraticCurveTo(mx, my, v.x2, v.y2); ctx.stroke();
+                });
+                clearGlow(ctx);
+            }
+
+            // A boulder that survived one hit shows a stress crack -- a visible cue that one more
+            // shot cracks it open, rather than the damage being invisible until it happens.
+            if (t.maxHp && t.hp < t.maxHp) {
+                if (!t.crackLine) {
+                    let a = Math.random() * Math.PI * 2, steps = 4;
+                    let line = [{ x: Math.cos(a) * r * 0.9, y: Math.sin(a) * r * 0.9 }];
+                    for (let i = 1; i <= steps; i++) {
+                        let f = i / steps;
+                        line.push({ x: Math.cos(a) * r * 0.9 * (1 - f) + (Math.random() - 0.5) * r * 0.3, y: Math.sin(a) * r * 0.9 * (1 - f) + (Math.random() - 0.5) * r * 0.3 });
+                    }
+                    t.crackLine = line;
+                }
+                ctx.beginPath(); ctx.moveTo(t.crackLine[0].x, t.crackLine[0].y);
+                for (let i = 1; i < t.crackLine.length; i++) ctx.lineTo(t.crackLine[i].x, t.crackLine[i].y);
+                ctx.strokeStyle = "rgba(20, 14, 8, 0.75)"; ctx.lineWidth = Math.max(1, r * 0.05); ctx.stroke();
+                ctx.strokeStyle = "rgba(255, 140, 60, 0.35)"; ctx.lineWidth = Math.max(0.5, r * 0.02); ctx.stroke();
+            }
+
             // A small mineral glint on the sunlit shoulder sells a rocky, faceted surface
             // rather than a flat painted circle.
             applyGlow(ctx, "rgba(255, 255, 255, 0.6)", 4);
@@ -1697,7 +1813,14 @@ function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     if (type.startsWith("boss")) t.rotSpeed = 0.2;
     if (type === "tie_advanced") t.fireTimer = Math.random() * 2 + 1;
     if (type === "sentinel") t.chaseSpeed = sentinelChaseSpeed(speedMod);
-    if (type === "asteroid") Object.assign(t, generateJaggedAsteroid(baseR));
+    if (type === "asteroid") {
+        Object.assign(t, generateJaggedAsteroid(baseR));
+        // A "boulder" -- big enough to take two hits before it cracks open, so the biggest rocks
+        // in a field carry some real weight instead of popping like every other piece of gravel.
+        if (baseR >= 50) { t.maxHp = 2; t.hp = 2; }
+        // A rare mineral-rich vein, independent of size -- worth seeking out for the bonus scrap.
+        if (Math.random() < 0.08) t.isOre = true;
+    }
     targets.push(t);
 }
 
@@ -2611,7 +2734,11 @@ function update(dt) {
                 
                 playSfx('hit');
                 if (t.hp !== undefined && t.hp > dmg) {
-                    t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; spawnText(t.x, t.y, `-${dmg}`, "#fff"); updateUI(); hit = true; spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5);
+                    t.hp -= dmg; t.hitFlash = 0.1; score += diffScoreMult *25 * combo; updateUI(); hit = true;
+                    // A boulder chips rather than showing a damage number -- rock-grey debris and
+                    // a widening crack instead of the generic "-1" every other multi-hit target uses.
+                    if (t.type === "asteroid") { spawnParticles(bullets[i].x, bullets[i].y, "#9a9a92", 6); spawnText(t.x, t.y, "CRACKING", "#ccaa77", 12); }
+                    else { spawnText(t.x, t.y, `-${dmg}`, "#fff"); spawnParticles(bullets[i].x, bullets[i].y, "#fff", 5); }
                     // A wounded boss breaks for the asteroid field and the fight moves to the
                     // cockpit. Swarm "bosses" are excluded -- there is no single thing to chase.
                     if (t.type.startsWith("boss") && !t.pursuitTriggered && t.hp <= t.maxHp * BOSS_PURSUIT_THRESHOLD) {
@@ -2639,7 +2766,23 @@ function update(dt) {
                     else { score += diffScoreMult *20*combo; spawnScrap(t.x, t.y, 1); }
                     if (targets.length === 1) { score += diffScoreMult *1200*combo; shake = 25; spawnText(t.x, t.y - 20, "SWARM DEFEATED!", "#ff33ff", 20); }
                 }
-                else if (t.type === "asteroid") { score += diffScoreMult *((t.r > 20) ? 20 : 50)*combo; if(Math.random()>0.5) spawnScrap(t.x, t.y, 1); if (t.r > 20) { spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y); } }
+                else if (t.type === "asteroid") {
+                    score += diffScoreMult *((t.r > 20) ? 20 : 50)*combo;
+                    if (t.isOre) {
+                        // A rare mineral-rich rock: guaranteed, bigger scrap and a distinct callout,
+                        // so noticing the glowing veins and prioritizing it actually pays off.
+                        score += diffScoreMult * 60 * combo; spawnScrap(t.x, t.y, 5);
+                        spawnText(t.x, t.y - 18, "ORE VEIN!", "#ffcc44", 16);
+                    } else if (Math.random() > 0.5) spawnScrap(t.x, t.y, 1);
+                    if (t.maxHp > 1) spawnParticles(t.x, t.y, "#9a9a92", 18);   // a boulder cracks apart, not just pops
+                    if (t.r > 20) {
+                        for (let k = 0; k < 2; k++) {
+                            spawnTarget("asteroid", t.r / 2, diffMod * 1.3, t.x, t.y);
+                            let child = targets[targets.length - 1];
+                            if (t.isOre && Math.random() < 0.5) child.isOre = true;   // a vein can survive into one half
+                        }
+                    }
+                }
                 
                 targets.splice(j, 1); hit = true; break;
             }
@@ -2723,10 +2866,6 @@ function render3D() {
     // own pass after everything else instead.
     let renderList = [...targets3D, ...bossEffects3D.filter(e => e.kind !== "flash").map(e => ({ ...e, __isEffect: true, angle: 0 }))]
         .sort((a,b) => b.z - a.z);
-    // A fixed light source (upper-left, as if lit by a distant sun) used for the boss's rim
-    // light and ambient-occlusion shadow below -- real light in space is hard and directional,
-    // not the flat, self-lit look every hull gets from its own top-down 2D shading.
-    const LIGHT_ANGLE = -2.35;
 
     bullets3D.forEach(b => {
         if (b.z < 10) return;
@@ -2777,30 +2916,18 @@ function render3D() {
             // hidden for the draw because the designs hang the bar at -r-20, which at this world
             // radius floats far above the hull as a detached red line; the cockpit HUD carries it.
             else if (t.isBoss && TargetDesigns[t.type]) {
-                // Contact-shadow halo first, so it reads as a soft dark falloff at the hull's
-                // edges -- the same trick popHalo() uses for a glow, run in reverse for weight.
-                let ao = ctx.createRadialGradient(t.r*0.25, t.r*0.35, t.r*0.15, 0, 0, t.r*1.35);
-                ao.addColorStop(0, "rgba(0,0,0,0)"); ao.addColorStop(1, "rgba(0,0,0,0.6)");
-                ctx.fillStyle = ao; ctx.beginPath(); ctx.arc(0, 0, t.r*1.35, 0, Math.PI*2); ctx.fill();
+                // Same shared lighting as every 2D target -- contact-shadow AO, a hard rim light,
+                // hazard lights -- so the pursuit phase reads as a continuation of the same boss
+                // rather than a different rendering style taking over.
+                applyAmbientOcclusion(ctx, t.r, 0.6, 1.35);
 
                 let hp = t.hp; t.hp = undefined;
                 TargetDesigns[t.type].draw(ctx, t.r, t);
                 t.hp = hp;
 
-                // Hard rim light along the sun-facing edge -- directional, not the ambient glow
-                // every hull already draws around itself, which is what sells a lit solid object
-                // rather than a flat sprite.
-                ctx.strokeStyle = "rgba(215, 232, 255, 0.4)"; ctx.lineWidth = t.r * 0.05;
-                ctx.beginPath(); ctx.arc(0, 0, t.r * 0.97, LIGHT_ANGLE - 0.9, LIGHT_ANGLE + 0.9); ctx.stroke();
-
-                // A couple of independently-blinking hazard lights for scale and detail at range.
-                [[0.75, -0.3, 0], [-0.6, 0.5, 1.7]].forEach(([lx, ly, phase]) => {
-                    if (Math.sin(frames * 0.05 + phase * 3) > 0.5) {
-                        applyGlow(ctx, "#ff3333", 6); ctx.fillStyle = "#ff5555";
-                        ctx.beginPath(); ctx.arc(t.r * lx, t.r * ly, t.r * 0.03, 0, Math.PI*2); ctx.fill();
-                        clearGlow(ctx);
-                    }
-                });
+                applyRimLight(ctx, t.r, { width: 0.05 });
+                let lights = HAZARD_LIGHT_POINTS[t.type];
+                if (lights && lights.length) drawHazardLights(ctx, t.r, lights);
             }
             else TargetDesigns.asteroid.draw(ctx, t.r, t);
         }
@@ -3229,12 +3356,27 @@ function render() {
     });
 
     targets.forEach(t => {
-        ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle); 
-        if (t.stunned > 0) { ctx.translate((Math.random()-0.5)*5, (Math.random()-0.5)*5); } 
-        if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false); 
+        ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle);
+        if (t.stunned > 0) { ctx.translate((Math.random()-0.5)*5, (Math.random()-0.5)*5); }
+        // hive_minion keeps its own bio-tech glow language rather than hard directional light,
+        // and a submerged worm draws nothing but its ripple -- no hull to shade.
+        let skipShading = t.hitFlash > 0 || t.type === "hive_minion" || (t.type === "boss_worm" && t.submerged);
+        // AO is scoped to asteroids and bosses -- both are big, mostly-filled shapes a tight
+        // circular gradient actually hugs. A thin, sparse silhouette (a star destroyer's wedge,
+        // a sentinel's small ball-and-legs frame) leaves most of that same circle sitting over
+        // open space, and it reads as a dark bubble floating behind the ship rather than shadow
+        // on the hull. Those types get the rim light and hazard lights below without the AO fill.
+        let useAO = !skipShading && (t.type === "asteroid" || t.type.startsWith("boss"));
+        if (useAO) applyAmbientOcclusion(ctx, t.r, t.type.startsWith("boss") ? 0.4 : 0.26, t.type === "asteroid" ? 0.95 : 1.05);
+        if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false);
         else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
-        else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t); 
-        ctx.restore(); 
+        else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t);
+        if (!skipShading) {
+            applyRimLight(ctx, t.r, { width: t.type.startsWith("boss") ? 0.04 : 0.06 });
+            let lights = HAZARD_LIGHT_POINTS[t.type];
+            if (lights && lights.length) drawHazardLights(ctx, t.r, lights, { color: t.type.startsWith("boss") ? "#ff5555" : "#ff3333" });
+        }
+        ctx.restore();
     });
 
     powerups.forEach(p => {
