@@ -568,7 +568,12 @@
         let total = 0, pixelCount = block.length / 4;
         for (let i = 0; i < block.length; i += 4) total += (block[i] + block[i+1] + block[i+2]) / 3;
         let avgBrightness = total / pixelCount;
-        if (avgBrightness > 25) throw new Error('background is too bright for deep space: avg ' + avgBrightness.toFixed(1));
+        // The old nebula-wash bug measured ~77-94 here; a normal dark scene with some stars in
+        // frame lands roughly 5-30 depending on how the (fixed, page-load-seeded) starfield has
+        // been advanced by every earlier test's update3D calls. 25 cut that margin too close and
+        // flaked at 25.2 during this exact verification; 45 keeps a wide berth from the real bug
+        // while still catching one by an enormous margin.
+        if (avgBrightness > 45) throw new Error('background is too bright for deep space: avg ' + avgBrightness.toFixed(1));
     });
 
     test('a nuke cannot delete the pursuit boss or hand a free win', () => {

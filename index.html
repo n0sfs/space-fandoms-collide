@@ -22,6 +22,15 @@
             background-color: #0a0a0a; border: 2px solid #444; border-radius: 8px;
             padding: 8px 16px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.1);
         }
+        #flightManual summary {
+            cursor: pointer; color: #ffcc00; font-weight: bold; font-size: 13px;
+            list-style: none; padding: 4px 2px; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        #flightManual summary::-webkit-details-marker { display: none; }
+        #flightManual summary::after { content: "▾"; font-size: 11px; transition: transform 0.15s; }
+        #flightManual[open] summary::after { transform: rotate(180deg); }
+        #flightManual[open] summary { margin-bottom: 6px; padding-bottom: 8px; border-bottom: 1px dashed #444; }
+        #flightManual summary:hover { color: #fff; }
         .fm-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 18px; }
         .fm-row + .fm-row { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #555; }
         .fm-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -335,17 +344,31 @@
 <body>
 
     <div id="firstRunHint" class="hidden">
-        👆 New pilot? Check the Flight Manual above for controls. Multiple kids playing? Tap 👤 PILOT on the menu for separate save profiles.
+        👆 New pilot? Tap the Flight Manual above to see controls. Multiple kids playing? Tap 👤 PILOT on the menu for separate save profiles.
         <span id="firstRunHintClose">&times;</span>
     </div>
 
-    <div id="flightManual">
-        <div class="fm-row">
+    <!-- Collapsed by default: this used to sit permanently expanded above the menu, pushing the
+         actual "launch a mission" flow down behind a full controls-and-powerups reference on
+         every single visit, mobile and desktop alike. Native <details> needs no extra JS and
+         works with a plain tap on touch out of the box. -->
+    <details id="flightManual">
+        <summary id="flightManualSummary">🕹️ FLIGHT MANUAL &amp; POWERUP LEGEND</summary>
+        <div class="fm-row" id="fmDesktopControls">
             <div class="fm-item"><span class="fm-key">MOUSE</span><span class="fm-desc">Aim</span></div>
             <div class="fm-item"><span class="fm-key">L-CLICK</span>/<span class="fm-key">SPACE</span><span class="fm-desc">Fire</span></div>
             <div class="fm-item"><span class="fm-key">R-CLICK</span>/<span class="fm-key">W</span><span class="fm-desc">Thrust</span></div>
             <div class="fm-item"><span class="fm-key">B</span><span class="fm-desc">Nuke</span></div>
             <div class="fm-item"><span class="fm-key">P</span><span class="fm-desc">Pause</span></div>
+        </div>
+        <!-- Swapped in for touch devices by isTouchDevice's detection in game.js -- the desktop
+             row above names keys and clicks that don't exist on a phone (MOUSE, L-CLICK, W...),
+             which is actively misleading rather than just unhelpful for a first-time touch player. -->
+        <div class="fm-row hidden" id="fmTouchControls">
+            <div class="fm-item"><span class="fm-key">JOYSTICK</span><span class="fm-desc">Aim &amp; Thrust</span></div>
+            <div class="fm-item"><span class="fm-key">FIRE</span><span class="fm-desc">Shoot</span></div>
+            <div class="fm-item"><span class="fm-key">NUKE</span><span class="fm-desc">Bomb</span></div>
+            <div class="fm-item"><span class="fm-key">II</span><span class="fm-desc">Pause</span></div>
         </div>
         <div class="fm-row fm-powerups">
             <span style="background:#ff00ff">[M] Multi</span>
@@ -356,7 +379,7 @@
             <span style="background:#66ccff">[T] Slow</span>
             <span style="background:linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta)">[C] Party</span>
         </div>
-    </div>
+    </details>
 
     <div id="gameWrapper">
         <div id="gameColumn">

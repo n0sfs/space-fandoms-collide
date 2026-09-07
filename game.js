@@ -669,7 +669,16 @@ window.addEventListener("keyup", (e) => keys[e.code] = false);
 
 // --- TOUCH ---
 const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
-if (isTouchDevice) document.body.classList.add("touch-device");
+if (isTouchDevice) {
+    document.body.classList.add("touch-device");
+    // The desktop control row names keys and clicks that don't exist on a touch device (MOUSE,
+    // L-CLICK, W...) -- swap it for the joystick/button legend instead of leaving it up as
+    // actively wrong instructions.
+    const fmDesktop = document.getElementById("fmDesktopControls");
+    const fmTouch = document.getElementById("fmTouchControls");
+    if (fmDesktop) fmDesktop.classList.add("hidden");
+    if (fmTouch) fmTouch.classList.remove("hidden");
+}
 // Some laptops (2-in-1s, touch-enabled Windows machines) report touch support even when the
 // player is using a mouse. Track whichever input actually moves the aim, so the crosshair
 // doesn't stay hidden just because the hardware happens to support touch.
