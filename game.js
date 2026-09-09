@@ -686,7 +686,7 @@ let usingMouse = !isTouchDevice;
 const joystickZone = document.getElementById("joystickZone"); const joystickThumb = document.getElementById("joystickThumb");
 const fireBtn = document.getElementById("fireBtn"); const pauseBtn = document.getElementById("pauseBtn"); const bombBtn = document.getElementById("bombBtn");
 const muteBtn = document.getElementById("muteBtn");
-const JOYSTICK_MAX = 45, JOYSTICK_DEADZONE = 10, JOYSTICK_AIM_DIST = 200;
+const JOYSTICK_MAX = 50, JOYSTICK_DEADZONE = 10, JOYSTICK_AIM_DIST = 200;
 let joystickTouchId = null, joystickCenter = { x: 0, y: 0 };
 
 function handleJoystickMove(clientX, clientY) {

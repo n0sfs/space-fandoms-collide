@@ -14,33 +14,33 @@
         #firstRunHint {
             width: 1000px; max-width: 95vw; margin-bottom: 10px; box-sizing: border-box;
             background: rgba(255, 204, 0, 0.12); border: 1px solid #ffcc00; border-radius: 6px;
-            padding: 8px 14px; font-size: 13px; color: #ffcc00; text-align: center; position: relative;
+            padding: 10px 16px; font-size: 14px; color: #ffcc00; text-align: center; position: relative;
         }
-        #firstRunHintClose { position: absolute; right: 10px; top: 6px; cursor: pointer; font-size: 16px; color: #ffcc00; }
+        #firstRunHintClose { position: absolute; right: 10px; top: 8px; cursor: pointer; font-size: 18px; color: #ffcc00; }
         #flightManual {
             width: 1000px; max-width: 95vw; margin-bottom: 12px; box-sizing: border-box;
             background-color: #0a0a0a; border: 2px solid #444; border-radius: 8px;
-            padding: 8px 16px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.1);
+            padding: 10px 16px; box-shadow: 0 0 20px rgba(0, 150, 255, 0.1);
         }
         #flightManual summary {
-            cursor: pointer; color: #ffcc00; font-weight: bold; font-size: 13px;
-            list-style: none; padding: 4px 2px; display: flex; align-items: center; justify-content: center; gap: 8px;
+            cursor: pointer; color: #ffcc00; font-weight: bold; font-size: 14px;
+            list-style: none; padding: 5px 2px; display: flex; align-items: center; justify-content: center; gap: 8px;
         }
         #flightManual summary::-webkit-details-marker { display: none; }
-        #flightManual summary::after { content: "▾"; font-size: 11px; transition: transform 0.15s; }
+        #flightManual summary::after { content: "▾"; font-size: 12px; transition: transform 0.15s; }
         #flightManual[open] summary::after { transform: rotate(180deg); }
         #flightManual[open] summary { margin-bottom: 6px; padding-bottom: 8px; border-bottom: 1px dashed #444; }
         #flightManual summary:hover { color: #fff; }
-        .fm-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 18px; }
+        .fm-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px 18px; }
         .fm-row + .fm-row { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #555; }
-        .fm-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-        .fm-key { display: inline-block; background: #222; color: #fff; border: 1px solid #ffcc00; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-        .fm-desc { color: #ccc; font-size: 12px; }
-        .fm-powerups span { padding: 2px 8px; border-radius: 3px; color: #000; font-size: 12px; font-weight: bold; }
+        .fm-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .fm-key { display: inline-block; background: #222; color: #fff; border: 1px solid #ffcc00; padding: 3px 7px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+        .fm-desc { color: #ccc; font-size: 13px; }
+        .fm-powerups span { padding: 3px 9px; border-radius: 3px; color: #000; font-size: 13px; font-weight: bold; }
         #swarmBar {
             width: 1000px; max-width: 100%; margin-bottom: 8px; box-sizing: border-box; text-align: center;
             background: rgba(204, 51, 255, 0.12); border: 1px solid #cc33ff; border-radius: 6px;
-            padding: 6px 10px; font-size: 13px; font-weight: bold; color: #ff66ff; letter-spacing: 1px;
+            padding: 7px 10px; font-size: 14px; font-weight: bold; color: #ff66ff; letter-spacing: 1px;
             animation: swarmPulse 1.4s ease-in-out infinite;
         }
         @keyframes swarmPulse { 0%, 100% { box-shadow: 0 0 6px rgba(204, 51, 255, 0.3); } 50% { box-shadow: 0 0 18px rgba(255, 51, 255, 0.7); } }
@@ -67,46 +67,46 @@
         }
         body.touch-device #touchControls { display: flex; }
         #joystickZone {
-            position: relative; width: 120px; height: 120px; border-radius: 50%; flex-shrink: 0;
+            position: relative; width: 132px; height: 132px; border-radius: 50%; flex-shrink: 0;
             background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(51, 204, 255, 0.4); touch-action: none;
         }
         #joystickThumb {
-            position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+            position: absolute; left: 38px; top: 38px; width: 56px; height: 56px; border-radius: 50%;
             background: rgba(51, 204, 255, 0.5); border: 2px solid #33ccff; pointer-events: none;
         }
         #rightControls { display: flex; align-items: center; gap: 20px; }
         #fireBtn {
-            width: 90px; height: 90px; border-radius: 50%; flex-shrink: 0;
+            width: 98px; height: 98px; border-radius: 50%; flex-shrink: 0;
             background: rgba(255, 51, 51, 0.2); border: 2px solid #ff3333; color: #ff3333;
-            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 15px;
             touch-action: none; user-select: none;
         }
         #bombBtn {
-            width: 60px; height: 60px; border-radius: 50%; flex-shrink: 0;
+            width: 66px; height: 66px; border-radius: 50%; flex-shrink: 0;
             background: rgba(255, 204, 0, 0.2); border: 2px solid #ffcc00; color: #ffcc00;
-            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
             touch-action: none; user-select: none;
         }
         #fireBtn.active { background: rgba(255, 51, 51, 0.5); }
         #bombBtn.active { background: rgba(255, 204, 0, 0.5); }
 
         #pauseBtn {
-            width: 34px; height: 26px; border-radius: 6px;
+            width: 40px; height: 32px; border-radius: 6px;
             background: rgba(255, 204, 0, 0.15); border: 2px solid #ffcc00; color: #ffcc00;
-            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;
             touch-action: none; user-select: none; cursor: pointer;
         }
 
         #muteBtn {
-            width: 34px; height: 26px; border-radius: 6px;
+            width: 40px; height: 32px; border-radius: 6px;
             background: rgba(51, 204, 255, 0.15); border: 2px solid #33ccff; color: #33ccff;
-            display: flex; align-items: center; justify-content: center; font-size: 14px;
+            display: flex; align-items: center; justify-content: center; font-size: 16px;
             touch-action: none; user-select: none; cursor: pointer;
         }
         #muteBtn.active { background: rgba(255, 51, 51, 0.15); border-color: #ff3333; color: #ff3333; }
 
         #ui {
-            margin-bottom: 10px; font-size: 13px; font-weight: bold;
+            margin-bottom: 10px; font-size: 15px; font-weight: bold;
             color: #ffcc00; letter-spacing: 1px; width: 1000px;
             /* Had a hard 1000px width and no max-width, so the HUD hung off both edges on any
                window narrower than the canvas -- the level readout was the first thing cut. */
@@ -120,52 +120,52 @@
         .scrap-text { color: #ff00ff; }
         .lives-text { color: #ff9944; letter-spacing: 2px; }
         .heat-text { color: #ff5500; }
-        .combo-text { color: #ffff00; font-size: 16px; }
+        .combo-text { color: #ffff00; font-size: 18px; }
 
 
         /* Overlay Styles */
         .overlay {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.95); border: 2px solid #ffcc00; padding: 25px;
+            background: rgba(0, 0, 0, 0.95); border: 2px solid #ffcc00; padding: 28px;
             text-align: center; border-radius: 10px; box-shadow: 0 0 20px #ffcc00; z-index: 10;
-            box-sizing: border-box; max-height: 95vh; overflow-y: auto;
+            box-sizing: border-box; max-height: 95vh; overflow-y: auto; font-size: 15px;
         }
-        #menuOverlay { width: 550px; }
-        #pauseOverlay { width: 320px; border-color: #33ccff; box-shadow: 0 0 20px rgba(51, 204, 255, 0.5); z-index: 20; }
-        
-        .overlay h1 { margin-top: 0; margin-bottom: 10px; text-transform: uppercase; color: #ffcc00; }
+        #menuOverlay { width: 620px; }
+        #pauseOverlay { width: 360px; border-color: #33ccff; box-shadow: 0 0 20px rgba(51, 204, 255, 0.5); z-index: 20; }
+
+        .overlay h1 { margin-top: 0; margin-bottom: 10px; text-transform: uppercase; color: #ffcc00; font-size: 26px; }
         #pauseOverlay h1 { color: #33ccff; margin-bottom: 25px; }
 
-        .input-group { margin-bottom: 15px; }
-        #playerName { font-size: 24px; text-align: center; width: 80px; background: #222; color: #fff; border: 1px solid #ffcc00; text-transform: uppercase; font-family: inherit; }
+        .input-group { margin-bottom: 15px; font-size: 14px; }
+        #playerName { font-size: 26px; text-align: center; width: 84px; background: #222; color: #fff; border: 1px solid #ffcc00; text-transform: uppercase; font-family: inherit; padding: 4px 0; }
 
         /* Pilot Profiles */
         .profile-switch-btn {
-            display: block; margin: 0 auto 15px; padding: 5px 14px; font-size: 11px; font-family: inherit;
+            display: block; margin: 0 auto 15px; padding: 6px 16px; font-size: 13px; font-family: inherit;
             background: rgba(51, 204, 255, 0.08); border: 1px solid #33ccff; color: #33ccff; border-radius: 12px; cursor: pointer; transition: 0.2s;
         }
         .profile-switch-btn:hover { background: #33ccff; color: #000; }
-        #profilesOverlay { width: 400px; }
+        #profilesOverlay { width: 440px; }
         #profilesList { text-align: left; margin-bottom: 15px; }
-        .profile-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); font-size: 13px; }
+        .profile-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); font-size: 15px; }
         .profile-row.active { border-color: #33ccff; background: rgba(51, 204, 255, 0.08); color: #33ccff; }
         .profile-actions { display: flex; gap: 6px; }
-        .profile-switch-action, .profile-delete-action { background: #222; color: #fff; border: 1px solid #555; border-radius: 3px; font-size: 10px; font-family: inherit; cursor: pointer; padding: 4px 8px; }
+        .profile-switch-action, .profile-delete-action { background: #222; color: #fff; border: 1px solid #555; border-radius: 3px; font-size: 12px; font-family: inherit; cursor: pointer; padding: 5px 10px; }
         .profile-switch-action:hover { background: #33ccff; color: #000; }
         .profile-delete-action:hover { background: #ff3333; color: #fff; }
         .new-profile-row { display: flex; gap: 8px; margin-bottom: 15px; }
-        .new-profile-row input { flex: 1; background: #222; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 6px 10px; font-family: inherit; text-transform: uppercase; }
-        .new-profile-row button { padding: 6px 12px; font-size: 11px; }
+        .new-profile-row input { flex: 1; background: #222; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 8px 10px; font-family: inherit; text-transform: uppercase; font-size: 14px; }
+        .new-profile-row button { padding: 8px 14px; font-size: 13px; }
 
         /* Volume */
-        .volume-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-size: 11px; color: #888; text-transform: uppercase; }
+        .volume-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-size: 13px; color: #888; text-transform: uppercase; }
         .volume-row input[type="range"] { flex: 1; }
-        
+
         /* Difficulty Buttons */
-        .diff-group { display: flex; gap: 5px; margin-bottom: 15px; }
+        .diff-group { display: flex; gap: 6px; margin-bottom: 15px; }
         .diff-btn {
             flex: 1; background: #111; color: #888; border: 1px solid #444;
-            padding: 8px; font-size: 12px; font-weight: bold; font-family: inherit; cursor: pointer; transition: 0.2s; border-radius: 4px;
+            padding: 10px; font-size: 14px; font-weight: bold; font-family: inherit; cursor: pointer; transition: 0.2s; border-radius: 4px;
         }
         .diff-btn:hover { background: #222; color: #fff; }
         .diff-btn.active { background: #ffcc00; color: #000; border-color: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.5); }
@@ -173,33 +173,33 @@
         .diff-btn.insane-btn:hover { background: #331111; color: #ff6666; }
         .diff-btn.insane-btn.active { background: #ff3333; color: #000; border-color: #ff3333; box-shadow: 0 0 10px rgba(255,51,51,0.6); }
 
-        .ship-btn { background: #222; color: white; border: 1px solid #555; padding: 10px 5px; font-size: 12px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
+        .ship-btn { background: #222; color: white; border: 1px solid #555; padding: 11px 8px; font-size: 14px; font-family: inherit; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
         .ship-btn:hover { background: #ffcc00; color: black; border-color: white; }
 
         /* Alternate game modes */
         .mode-row { display: flex; gap: 8px; margin-top: 8px; }
-        .mode-btn { flex: 1; padding: 8px 4px; font-size: 11px; border-color: #33ccff; color: #33ccff; background: rgba(51, 204, 255, 0.08); }
+        .mode-btn { flex: 1; padding: 9px 4px; font-size: 13px; border-color: #33ccff; color: #33ccff; background: rgba(51, 204, 255, 0.08); }
         .mode-btn:hover:not(:disabled) { background: #33ccff; color: #000; border-color: #fff; }
         .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: #555; color: #777; background: #1a1a1a; }
-        .mode-hint { font-size: 10px; color: #888; margin-top: 6px; min-height: 12px; letter-spacing: 0.5px; }
+        .mode-hint { font-size: 11px; color: #888; margin-top: 6px; min-height: 12px; letter-spacing: 0.5px; }
 
         /* Mid-run perk choice */
-        #perkOverlay { width: min(94%, 640px); border-color: #33ff33; box-shadow: 0 0 24px #33ff33; }
-        .perk-heading { margin: 0 0 4px; color: #33ff33; font-size: 20px; letter-spacing: 1px; }
-        .perk-sub { font-size: 11px; color: #888; margin-bottom: 16px; }
+        #perkOverlay { width: min(94%, 700px); border-color: #33ff33; box-shadow: 0 0 24px #33ff33; }
+        .perk-heading { margin: 0 0 4px; color: #33ff33; font-size: 22px; letter-spacing: 1px; }
+        .perk-sub { font-size: 13px; color: #888; margin-bottom: 16px; }
         .perk-list { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         .perk-card {
-            flex: 1 1 170px; max-width: 200px; min-width: 150px; position: relative;
-            display: flex; flex-direction: column; align-items: center; gap: 6px;
-            background: #14180f; border: 1px solid #33ff33; border-radius: 8px; padding: 16px 10px 14px;
+            flex: 1 1 185px; max-width: 220px; min-width: 165px; position: relative;
+            display: flex; flex-direction: column; align-items: center; gap: 7px;
+            background: #14180f; border: 1px solid #33ff33; border-radius: 8px; padding: 18px 12px 16px;
             color: #eee; font-family: inherit; cursor: pointer; transition: 0.15s;
         }
         .perk-card:hover { background: #33ff33; color: #000; transform: translateY(-3px); }
-        .perk-key { position: absolute; top: 5px; left: 7px; font-size: 10px; color: #33ff33; border: 1px solid #33ff33; border-radius: 3px; padding: 0 4px; }
+        .perk-key { position: absolute; top: 6px; left: 8px; font-size: 11px; color: #33ff33; border: 1px solid #33ff33; border-radius: 3px; padding: 1px 5px; }
         .perk-card:hover .perk-key { color: #000; border-color: #000; }
-        .perk-icon { font-size: 30px; line-height: 1; }
-        .perk-title { font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-        .perk-desc { font-size: 11px; color: #9c9; line-height: 1.35; }
+        .perk-icon { font-size: 34px; line-height: 1; }
+        .perk-title { font-size: 15px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .perk-desc { font-size: 13px; color: #9c9; line-height: 1.35; }
         .perk-card:hover .perk-desc { color: #063; }
 
         /* Ship Select Dropdown */
@@ -207,122 +207,122 @@
         .ship-select-current {
             display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;
             background: #222; color: white; border: 1px solid #555; border-radius: 4px;
-            padding: 8px 12px; font-family: inherit; font-size: 13px; text-transform: uppercase;
+            padding: 10px 14px; font-family: inherit; font-size: 15px; text-transform: uppercase;
             cursor: pointer; transition: 0.2s;
         }
         .ship-select-current:hover { border-color: #ffcc00; }
-        .ship-select-current img { width: 28px; height: 28px; flex-shrink: 0; }
+        .ship-select-current img { width: 32px; height: 32px; flex-shrink: 0; }
         .ship-select-label { flex: 1; text-align: left; }
-        .ship-select-arrow { color: #888; font-size: 10px; }
+        .ship-select-arrow { color: #888; font-size: 11px; }
         .ship-select-list {
             position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5;
             background: #171717; border: 1px solid #555; border-radius: 4px;
-            max-height: 220px; overflow-y: auto; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+            max-height: 260px; overflow-y: auto; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
         }
         .ship-select-list::-webkit-scrollbar { width: 6px; }
         .ship-select-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
         .ship-option {
-            display: flex; align-items: center; gap: 10px; padding: 7px 12px;
-            font-size: 12px; text-transform: uppercase; cursor: pointer; transition: 0.15s;
+            display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+            font-size: 14px; text-transform: uppercase; cursor: pointer; transition: 0.15s;
         }
         .ship-option:hover { background: #ffcc00; color: #000; }
-        .ship-option img { width: 24px; height: 24px; flex-shrink: 0; }
+        .ship-option img { width: 28px; height: 28px; flex-shrink: 0; }
         .ship-option-label { flex: 1; }
-        .ship-stat-bars { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
-        .ship-stat-row { display: flex; align-items: center; gap: 4px; }
-        .ship-stat-label { font-size: 8px; width: 22px; text-align: right; color: #888; }
+        .ship-stat-bars { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+        .ship-stat-row { display: flex; align-items: center; gap: 5px; }
+        .ship-stat-label { font-size: 10px; width: 26px; text-align: right; color: #888; }
         .ship-option:hover .ship-stat-label { color: #333; }
         .ship-stat-label.spd { color: #33ccff; }
         .ship-stat-label.rate { color: #ff8800; }
         .ship-stat-label.armr { color: #ff9944; }
-        .ship-stat-num { font-size: 8px; color: #777; min-width: 30px; }
+        .ship-stat-num { font-size: 10px; color: #777; min-width: 32px; }
         .ship-option:hover .ship-stat-num { color: #333; }
-        .ship-stat-dots { display: flex; gap: 1px; }
-        .ship-stat-dot { width: 5px; height: 5px; border-radius: 1px; background: #333; }
+        .ship-stat-dots { display: flex; gap: 2px; }
+        .ship-stat-dot { width: 6px; height: 6px; border-radius: 1px; background: #333; }
         .ship-stat-dot.filled { background: #999; }
         .ship-option:hover .ship-stat-dot.filled { background: #000; }
-        .launch-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(255, 204, 0, 0.15); border-color: #ffcc00; color: #ffcc00; }
+        .launch-btn { width: 100%; margin-bottom: 15px; padding: 13px; font-size: 16px; font-weight: bold; background: rgba(255, 204, 0, 0.15); border-color: #ffcc00; color: #ffcc00; }
         .launch-btn:hover { background: #ffcc00; color: #000; }
 
         .more-toggle-btn {
-            display: block; width: 100%; margin-bottom: 15px; padding: 6px; font-size: 11px; font-family: inherit;
+            display: block; width: 100%; margin-bottom: 15px; padding: 8px; font-size: 13px; font-family: inherit;
             background: none; border: 1px dashed #444; color: #777; cursor: pointer; border-radius: 4px; transition: 0.2s;
         }
         .more-toggle-btn:hover { border-color: #888; color: #ccc; }
-        .more-toggle-hint { margin: -10px 0 15px; font-size: 10px; color: #555; text-align: center; }
+        .more-toggle-hint { margin: -10px 0 15px; font-size: 11px; color: #555; text-align: center; }
 
         /* Trail Picker */
         .trail-picker-wrap { margin-bottom: 15px; text-align: left; }
-        .trail-picker-wrap label { display: block; font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; }
+        .trail-picker-wrap label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; text-transform: uppercase; }
         .trail-picker { display: flex; gap: 8px; }
         .trail-swatch {
-            width: 30px; height: 30px; border-radius: 50%; border: 2px solid #444; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; font-size: 12px; padding: 0;
+            width: 34px; height: 34px; border-radius: 50%; border: 2px solid #444; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 13px; padding: 0;
         }
         .trail-swatch.equipped { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
         .trail-swatch.locked { opacity: 0.35; cursor: not-allowed; filter: grayscale(1); }
 
         /* Ship Builder */
-        .builder-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(0, 255, 200, 0.1); border-color: #00ffc8; color: #00ffc8; }
+        .builder-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(0, 255, 200, 0.1); border-color: #00ffc8; color: #00ffc8; }
         .builder-btn:hover:not(:disabled) { background: #00ffc8; color: #000; }
         .builder-btn:disabled { background: #111; border-color: #444; color: #666; cursor: not-allowed; }
-        #builderOverlay { width: 480px; }
+        #builderOverlay { width: 520px; }
         #builderPreview { display: block; margin: 0 auto 12px; background: #000; border: 1px solid #444; border-radius: 8px; }
-        .builder-shapes { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-        .builder-shape-btn { background: #111; border: 1px solid #555; border-radius: 4px; padding: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-        .builder-shape-btn img { width: 32px; height: 32px; }
-        .builder-shape-btn span { font-size: 10px; color: #ccc; }
+        .builder-shapes { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 7px; margin-bottom: 12px; }
+        .builder-shape-btn { background: #111; border: 1px solid #555; border-radius: 4px; padding: 5px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .builder-shape-btn img { width: 36px; height: 36px; }
+        .builder-shape-btn span { font-size: 11px; color: #ccc; }
         .builder-shape-btn.active { border-color: #00ffc8; background: rgba(0, 255, 200, 0.15); }
-        .builder-colors { display: flex; justify-content: center; gap: 20px; margin-bottom: 12px; font-size: 12px; }
+        .builder-colors { display: flex; justify-content: center; gap: 20px; margin-bottom: 12px; font-size: 14px; }
         .builder-colors label { display: flex; align-items: center; gap: 6px; }
-        .builder-colors input[type="color"] { width: 34px; height: 24px; border: 1px solid #555; background: none; cursor: pointer; padding: 0; }
-        .builder-stats { background: rgba(0, 255, 200, 0.06); border: 1px dashed #00ffc8; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
-        .builder-stat-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
-        .builder-stat-row span:first-child { width: 70px; text-align: left; color: #00ffc8; }
+        .builder-colors input[type="color"] { width: 38px; height: 28px; border: 1px solid #555; background: none; cursor: pointer; padding: 0; }
+        .builder-stats { background: rgba(0, 255, 200, 0.06); border: 1px dashed #00ffc8; border-radius: 8px; padding: 12px; margin-bottom: 15px; }
+        .builder-stat-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 14px; }
+        .builder-stat-row span:first-child { width: 78px; text-align: left; color: #00ffc8; }
         .builder-stat-row input[type="range"] { flex: 1; }
-        .builder-stat-row span:last-child { width: 16px; text-align: center; }
-        #builderPoints { text-align: center; font-size: 12px; color: #ffcc00; margin-top: 4px; }
+        .builder-stat-row span:last-child { width: 18px; text-align: center; }
+        #builderPoints { text-align: center; font-size: 14px; color: #ffcc00; margin-top: 4px; }
 
         /* Achievements */
-        .achievements-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(255, 204, 0, 0.1); border-color: #ffcc00; color: #ffcc00; }
+        .achievements-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(255, 204, 0, 0.1); border-color: #ffcc00; color: #ffcc00; }
         .achievements-btn:hover { background: #ffcc00; color: #000; }
-        #achievementsOverlay { width: 480px; }
+        #achievementsOverlay { width: 520px; }
         #achievementsList { text-align: left; margin-bottom: 15px; }
-        .ach-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); }
+        .ach-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; margin-bottom: 7px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); }
         .ach-row.unlocked { border-color: #ffcc00; background: rgba(255, 204, 0, 0.08); }
-        .ach-icon { font-size: 22px; width: 30px; text-align: center; filter: grayscale(1); opacity: 0.35; flex-shrink: 0; }
+        .ach-icon { font-size: 26px; width: 34px; text-align: center; filter: grayscale(1); opacity: 0.35; flex-shrink: 0; }
         .ach-row.unlocked .ach-icon { filter: none; opacity: 1; }
-        .ach-title { font-size: 13px; font-weight: bold; color: #777; }
+        .ach-title { font-size: 15px; font-weight: bold; color: #777; }
         .ach-row.unlocked .ach-title { color: #ffcc00; }
-        .ach-desc { font-size: 11px; color: #666; }
+        .ach-desc { font-size: 13px; color: #666; }
 
         /* Pilot Record */
-        .record-btn { width: 100%; margin-bottom: 15px; padding: 8px; font-size: 12px; font-weight: bold; background: rgba(51, 204, 255, 0.1); border-color: #33ccff; color: #33ccff; }
+        .record-btn { width: 100%; margin-bottom: 15px; padding: 10px; font-size: 14px; font-weight: bold; background: rgba(51, 204, 255, 0.1); border-color: #33ccff; color: #33ccff; }
         .record-btn:hover { background: #33ccff; color: #000; }
-        #pilotRecordOverlay { width: 420px; }
+        #pilotRecordOverlay { width: 460px; }
         #pilotRecordList { text-align: left; margin-bottom: 15px; }
-        .record-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); font-size: 13px; }
+        .record-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; margin-bottom: 7px; border-radius: 6px; border: 1px solid #333; background: rgba(255, 255, 255, 0.02); font-size: 15px; }
         .record-row span:first-child { color: #999; }
         .record-row span:last-child { color: #33ccff; font-weight: bold; }
 
         /* Upgrade Shop */
-        #upgradeShop { background: rgba(255,0,255,0.1); border: 1px dashed #ff00ff; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
-        #upgradeShop h3 { margin: 0 0 10px 0; color: #ff00ff; font-size: 14px; text-transform: uppercase; }
-        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-        .shop-btn { background: #111; color: #0ff; border: 1px solid #0ff; padding: 8px 4px; font-size: 11px; cursor: pointer; font-family: inherit; transition: 0.2s; border-radius: 3px; }
+        #upgradeShop { background: rgba(255,0,255,0.1); border: 1px dashed #ff00ff; padding: 12px; border-radius: 8px; margin-bottom: 15px; }
+        #upgradeShop h3 { margin: 0 0 10px 0; color: #ff00ff; font-size: 15px; text-transform: uppercase; }
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+        .shop-btn { background: #111; color: #0ff; border: 1px solid #0ff; padding: 10px 5px; font-size: 13px; cursor: pointer; font-family: inherit; transition: 0.2s; border-radius: 3px; }
         .shop-btn:hover:not(:disabled) { background: #0ff; color: #000; }
         .shop-btn:disabled { color: #555; border-color: #333; cursor: not-allowed; background: #000; }
 
-        .pause-btn-wrap .ship-btn { width: 100%; margin-bottom: 10px; padding: 12px; font-size: 15px; font-weight: bold; }
+        .pause-btn-wrap .ship-btn { width: 100%; margin-bottom: 10px; padding: 14px; font-size: 17px; font-weight: bold; }
         .danger-btn { background: rgba(255, 51, 51, 0.1); border-color: #ff3333; color: #ff3333; }
         .danger-btn:hover { background: #ff3333; color: white; border-color: white; }
         .warning-btn { background: rgba(255, 153, 0, 0.1); border-color: #ff9900; color: #ff9900; }
         .warning-btn:hover { background: #ff9900; color: white; border-color: white; }
         .hidden { display: none !important; }
-        
+
         #leaderboard { margin-top: 15px; border-top: 1px dashed #555; padding-top: 10px; text-align: left; }
-        #leaderboard h3 { margin: 0 0 10px 0; color: #33ccff; text-align: center; }
-        .score-row { display: flex; justify-content: space-between; font-size: 14px; color: #ddd; margin-bottom: 5px; }
+        #leaderboard h3 { margin: 0 0 10px 0; color: #33ccff; text-align: center; font-size: 16px; }
+        .score-row { display: flex; justify-content: space-between; font-size: 15px; color: #ddd; margin-bottom: 6px; }
 
         @media (max-width: 880px), (pointer: coarse) {
             html, body { overflow-x: hidden; }
@@ -330,14 +330,14 @@
             #gameWrapper { flex-direction: column; align-items: center; width: 100%; }
             #flightManual { width: 100%; max-width: 1000px; }
             #firstRunHint { width: 100%; max-width: 1000px; }
-            #ui { width: 100%; max-width: 1000px; font-size: 11px; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
-            #swarmBar { width: 100%; max-width: 1000px; font-size: 11px; }
+            #ui { width: 100%; max-width: 1000px; font-size: 13px; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+            #swarmBar { width: 100%; max-width: 1000px; font-size: 13px; }
             #gameCanvas { width: 100%; max-width: 1000px; height: auto; display: block; }
-            #menuOverlay { width: min(95vw, 500px); max-height: 90vh; overflow-y: auto; padding: 18px; }
-            #builderOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
-            #achievementsOverlay { width: min(95vw, 460px); max-height: 90vh; overflow-y: auto; padding: 18px; }
-            #pilotRecordOverlay { width: min(95vw, 420px); max-height: 90vh; overflow-y: auto; padding: 18px; }
-            #profilesOverlay { width: min(95vw, 400px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #menuOverlay { width: min(95vw, 520px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #builderOverlay { width: min(95vw, 480px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #achievementsOverlay { width: min(95vw, 480px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #pilotRecordOverlay { width: min(95vw, 440px); max-height: 90vh; overflow-y: auto; padding: 18px; }
+            #profilesOverlay { width: min(95vw, 420px); max-height: 90vh; overflow-y: auto; padding: 18px; }
         }
     </style>
 </head>
@@ -393,7 +393,7 @@
                 <div class="ui-row" style="flex-direction: column; align-items: center; gap: 2px;">
                     <span>HEAT: <span id="heatDisplay" class="heat-text">0%</span></span>
                     <span>COMBO: <span id="comboDisplay" class="combo-text">1x</span></span>
-                    <span id="statusDisplay" style="font-size: 11px; color: #555;">—</span>
+                    <span id="statusDisplay" style="font-size: 12px; color: #555;">—</span>
                 </div>
                 <div class="ui-row">
                     <span>SCRAP: <span id="scrapDisplay" class="scrap-text">0</span></span>
