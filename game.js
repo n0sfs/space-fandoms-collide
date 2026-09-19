@@ -14,6 +14,20 @@ window.onerror = function(msg, url, line) {
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+// GAME_W/GAME_H are the fixed logical play-field size every position, spawn bound and
+// draw call in this file is written against -- kept constant across all devices so
+// difficulty/density never varies by monitor. The canvas's actual backing-store pixel
+// count is inflated by devicePixelRatio below (capped at 2x) purely so the same logical
+// scene renders crisply on retina/high-DPI screens instead of being upscaled and blurred;
+// ctx.scale() makes that inflation transparent to every GAME_W/GAME_H-space draw call.
+const GAME_W = 1000, GAME_H = 750;
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+canvas.width = GAME_W * DPR;
+canvas.height = GAME_H * DPR;
+ctx.scale(DPR, DPR);
+const REDUCE_MOTION = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+const SHAKE_SCALE = REDUCE_MOTION ? 0.25 : 1;
+
 // UI Elements
 const scoreEl = document.getElementById("scoreDisplay");
 const levelEl = document.getElementById("levelDisplay");
@@ -305,7 +319,7 @@ function drawAchievementToasts() {
     achievementToasts.forEach((t, i) => {
         let alpha = t.life > 3.7 ? (4.0 - t.life) / 0.3 : Math.min(1, t.life);
         alpha = Math.max(0, Math.min(1, alpha));
-        let w = 260, h = 56, x = canvas.width - w - 16, y = 16 + i * (h + 10);
+        let w = 260, h = 56, x = GAME_W - w - 16, y = 16 + i * (h + 10);
         ctx.save(); ctx.globalAlpha = alpha;
         ctx.fillStyle = "rgba(10, 10, 12, 0.9)"; ctx.strokeStyle = "#ffcc00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); ctx.stroke();
@@ -424,17 +438,17 @@ let gameState = "MENU";
 let gameDifficulty = "moderate";
 let diffScoreMult = 1;
 let score = 0, level = 1, frames = 0;
-let shake = 0, hyperspace = 0, nukeFlash = 0;
+let shake = 0, hyperspace = 0, nukeFlash = 0, hitstopTimer = 0;
 let playerHp = 100, playerMaxHp = 100, playerShield = 100, playerMaxShield = 100;
 let bombs = 1, lives = 3, currentRunScrap = 0, combo = 1, comboTimer = 0, heat = 0, overheated = false;
 
 let keys = {}; 
-let mouse = { x: canvas.width/2, y: canvas.height/2, leftDown: false, rightDown: false };
+let mouse = { x: GAME_W/2, y: GAME_H/2, leftDown: false, rightDown: false };
 let selectedShipType = "xwing", currentPlayerName = "AAA";
 let bullets = [], enemyBullets = [], targets = [], powerups = [], particles = [], lightTrails = [], floatingTexts = [], scrapDrops = [];
 let multishotTimer = 0, fireCooldown = 0, invulnTimer = 0, powerupSpawnedThisLevel = false;
 let rapidFireTimer = 0, slowmoTimer = 0, chaosTimer = 0;
-let ship = { x: canvas.width / 2, y: canvas.height / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
+let ship = { x: GAME_W / 2, y: GAME_H / 2, r: 15, angle: -Math.PI / 2, xv: 0, yv: 0, thrusting: false };
 
 // --- 3D STATE VARIABLES ---
 let is3DMode = false, levelTimer3D = 0;
@@ -590,11 +604,16 @@ let wakeLock = null;
 async function requestWakeLock() {
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && gameState === 'PLAYING') requestWakeLock(); });
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && gameState === 'PLAYING') requestWakeLock();
+    // A backgrounded tab still runs a throttled rAF loop rather than a truly frozen one, so a
+    // fight left running while alt-tabbed away can cost hull/shield the player never saw happen.
+    else if (document.visibilityState === 'hidden' && gameState === 'PLAYING') togglePause();
+});
 
-function spawnParticles(x, y, color, count, speedMod = 1) { for(let i=0; i<count; i++) { let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2; particles.push({ x: x || canvas.width/2, y: y || canvas.height/2, xv: Math.cos(angle) * speed, yv: Math.sin(angle) * speed, life: 1.0, color: color, size: Math.random() * 2 + 1 }); } }
-function spawnText(x, y, text, color = "#fff", size = 16) { floatingTexts.push({ x: (x||canvas.width/2) + (Math.random()-0.5)*20, y: (y||canvas.height/2) + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size }); }
-function spawnScrap(x, y, amount) { for(let i=0; i<amount; i++) scrapDrops.push({ x: x||canvas.width/2, y: y||canvas.height/2, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 }); }
+function spawnParticles(x, y, color, count, speedMod = 1) { for(let i=0; i<count; i++) { let speed = (Math.random() * 6 + 2) * speedMod; let angle = Math.random() * Math.PI * 2; particles.push({ x: x || GAME_W/2, y: y || GAME_H/2, xv: Math.cos(angle) * speed, yv: Math.sin(angle) * speed, life: 1.0, color: color, size: Math.random() * 2 + 1 }); } }
+function spawnText(x, y, text, color = "#fff", size = 16) { floatingTexts.push({ x: (x||GAME_W/2) + (Math.random()-0.5)*20, y: (y||GAME_H/2) + (Math.random()-0.5)*20, text: text, color: color, life: 1.0, size: size }); }
+function spawnScrap(x, y, amount) { for(let i=0; i<amount; i++) scrapDrops.push({ x: x||GAME_W/2, y: y||GAME_H/2, xv: (Math.random()-0.5)*5, yv: (Math.random()-0.5)*5, life: 8.0 }); }
 
 function updateDifficultyUI() { 
     diffButtons.forEach(b => b.classList.remove("active")); 
@@ -636,7 +655,7 @@ function triggerNuke() {
         enemyBullets3D = [];
         // A pursuit boss survives a nuke at 1 HP, exactly as it does in the 2D fight -- clearing
         // targets3D outright would delete it and hand the player a free, unscored win.
-        targets3D.forEach(t => { if (t.isBoss) { t.hp = Math.max(1, t.hp - 50); spawnText(canvas.width/2, canvas.height/2, "-50", "#ffcc00", 24); } });
+        targets3D.forEach(t => { if (t.isBoss) { t.hp = Math.max(1, t.hp - 50); spawnText(GAME_W/2, GAME_H/2, "-50", "#ffcc00", 24); } });
         targets3D = targets3D.filter(t => t.isBoss);
     }
     else {
@@ -652,7 +671,7 @@ function triggerNuke() {
 }
 
 // --- INPUT ---
-canvas.addEventListener("mousemove", (e) => { usingMouse = true; let rect = canvas.getBoundingClientRect(); mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width); mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height); });
+canvas.addEventListener("mousemove", (e) => { usingMouse = true; let rect = canvas.getBoundingClientRect(); mouse.x = (e.clientX - rect.left) * (GAME_W / rect.width); mouse.y = (e.clientY - rect.top) * (GAME_H / rect.height); });
 canvas.addEventListener("mousedown", (e) => { if (e.button === 0) mouse.leftDown = true; if (e.button === 2) mouse.rightDown = true; initAudio(); });
 canvas.addEventListener("mouseup", (e) => { if (e.button === 0) mouse.leftDown = false; if (e.button === 2) mouse.rightDown = false; });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
@@ -666,6 +685,10 @@ window.addEventListener("keydown", (e) => {
     if (gameState === "GAMEOVER" && e.code === "KeyR") { if(menuOverlay) menuOverlay.classList.remove("hidden"); gameState = "MENU"; if (typeof updateModeUI === "function") updateModeUI(); }
 });
 window.addEventListener("keyup", (e) => keys[e.code] = false);
+// Alt-tabbing away (or any focus loss) mid-keypress/mid-click never delivers the matching
+// keyup/mouseup -- without this, a held thrust/fire key or mouse button stays "stuck down"
+// in state and keeps firing/thrusting the moment focus returns, with no key still pressed.
+window.addEventListener("blur", () => { keys = {}; mouse.leftDown = false; mouse.rightDown = false; });
 
 // --- TOUCH ---
 const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
@@ -839,9 +862,9 @@ function drawCapitalShip(ctx, c) {
 }
 
 function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, customY = null, customAng = null) {
-    let sx = customX !== null ? customX : (ship.x || canvas.width/2); let sy = customY !== null ? customY : (ship.y || canvas.height/2);
+    let sx = customX !== null ? customX : (ship.x || GAME_W/2); let sy = customY !== null ? customY : (ship.y || GAME_H/2);
     let ang = customAng !== null ? customAng : ship.angle + angOffset; let rOffset = isEnemy ? 0 : ship.r;
-    return { x: sx + rOffset * Math.cos(ang), y: sy + rOffset * Math.sin(ang), xv: spd * Math.cos(ang), yv: spd * Math.sin(ang), range: canvas.width * 0.8, isEnemy: isEnemy };
+    return { x: sx + rOffset * Math.cos(ang), y: sy + rOffset * Math.sin(ang), xv: spd * Math.cos(ang), yv: spd * Math.sin(ang), range: GAME_W * 0.8, isEnemy: isEnemy };
 }
 
 // --- SHIPS ---
@@ -970,7 +993,7 @@ const ShipDesigns = {
         }
     },
     tardis: { name: "TARDIS", laserColor: "#ffffff", stats: { thrust: 6, fric: 0.99, fireRate: 0.7, heat: 25 },
-        fire: () => { let b = createBolt(0, 8); b.r = 20; b.range = canvas.width*0.4; bullets.push(b); playSfx('shoot'); }, 
+        fire: () => { let b = createBolt(0, 8); b.r = 20; b.range = GAME_W*0.4; bullets.push(b); playSfx('shoot'); }, 
         draw: (ctx, r, thrusting) => {
             popHalo(ctx, r, "#3399ff");
             let boxGrad = ctx.createLinearGradient(-r, 0, r, 0); boxGrad.addColorStop(0, "#002244"); boxGrad.addColorStop(0.4, "#0066bb"); boxGrad.addColorStop(0.55, "#004488"); boxGrad.addColorStop(1, "#001830");
@@ -1879,7 +1902,7 @@ function wormSegmentRadius(t, i) { return t.r * (0.82 - i * 0.06); }
 
 function spawnTarget(type, baseR, speedMod, specificX=null, specificY=null) {
     let x = specificX, y = specificY;
-    if (x === null) { let safeCounter = 0; do { x = Math.random() * (canvas.width || 1000); y = Math.random() * (canvas.height || 750); safeCounter++; } while (Math.hypot((ship.x || 500) - x, (ship.y || 375) - y) < 200 && safeCounter < 50); }
+    if (x === null) { let safeCounter = 0; do { x = Math.random() * (GAME_W || 1000); y = Math.random() * (GAME_H || 750); safeCounter++; } while (Math.hypot((ship.x || 500) - x, (ship.y || 375) - y) < 200 && safeCounter < 50); }
     if (type === "asteroid" && Math.random() < 0.1) { type = "satellite"; baseR = 25; }
 
     let spdMult = type === "asteroid" ? 0.3 : (type === "satellite" ? 0.2 : 1.0);
@@ -1928,7 +1951,7 @@ function spawnPowerup() {
     if (rand > 0.80) type = 'R';
     if (rand > 0.92) type = 'T';
     if (rand > 0.97) type = 'C';
-    powerups.push({ x: Math.random() * canvas.width, y: -20, xv: (Math.random() - 0.5) * 2, yv: 1 + Math.random(), r: 15, angle: 0, type: type });
+    powerups.push({ x: Math.random() * GAME_W, y: -20, xv: (Math.random() - 0.5) * 2, yv: 1 + Math.random(), r: 15, angle: 0, type: type });
     powerupSpawnedThisLevel = true;
 }
 
@@ -1970,21 +1993,21 @@ function damagePlayer(amt) {
     // Heavy, slow hulls shrug off part of every hit -- see hullResilience().
     amt = Math.max(1, Math.round(amt * playerResilience().damageMult));
     tookDamageThisHyperspace = true;
-    playSfx('hit'); shake += 5; vibrate(40); spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ffaa00", 10);
-    spawnText(ship.x || canvas.width/2, ship.y || canvas.height/2, `-${amt}`, "#ff3333", 20);
+    playSfx('hit'); shake += 5; vibrate(40); spawnParticles(ship.x || GAME_W/2, ship.y || GAME_H/2, "#ffaa00", 10);
+    spawnText(ship.x || GAME_W/2, ship.y || GAME_H/2, `-${amt}`, "#ff3333", 20);
     combo = 1; comboTimer = 0;
     
     if (playerShield > 0) { 
         playerShield -= amt; 
-        if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x || canvas.width/2, (ship.y || canvas.height/2)-20, "SHIELD BROKEN", "#00ffff", 14); } 
+        if (playerShield < 0) { playerHp += playerShield; playerShield = 0; playSfx('boom'); spawnText(ship.x || GAME_W/2, (ship.y || GAME_H/2)-20, "SHIELD BROKEN", "#00ffff", 14); } 
     } else { playerHp -= amt; }
     
     if (playerHp <= 0) {
-        playSfx('boom'); shake = 20; spawnParticles(ship.x || canvas.width/2, ship.y || canvas.height/2, "#ff3300", 50); multishotTimer = 0;
+        playSfx('boom'); shake = 20; spawnParticles(ship.x || GAME_W/2, ship.y || GAME_H/2, "#ff3300", 50); multishotTimer = 0;
         if (lives > 1) {
-            lives--; ship.x = canvas.width/2; ship.y = canvas.height/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield;
-            spawnText(canvas.width/2, canvas.height/2 - 40, "SHIP LOST", "#ff3333", 26);
-            spawnText(canvas.width/2, canvas.height/2, `${lives} ${lives === 1 ? "SHIP" : "SHIPS"} REMAINING`, "#ffcc00", 18);
+            lives--; ship.x = GAME_W/2; ship.y = GAME_H/2; ship.xv = 0; ship.yv = 0; invulnTimer = 3.0; playerHp = playerMaxHp; playerShield = playerMaxShield;
+            spawnText(GAME_W/2, GAME_H/2 - 40, "SHIP LOST", "#ff3333", 26);
+            spawnText(GAME_W/2, GAME_H/2, `${lives} ${lives === 1 ? "SHIP" : "SHIPS"} REMAINING`, "#ffcc00", 18);
             updateUI();
         }
         else {
@@ -2045,8 +2068,8 @@ function beginBossPursuit(boss) {
     // Seed the field so the player arrives inside the asteroids rather than in empty space.
     for (let i = 0; i < 18; i++) spawnTarget3D();
 
-    spawnText(canvas.width/2, canvas.height/2 - 40, "IT'S BREAKING AWAY!", "#ff5555", 30);
-    spawnText(canvas.width/2, canvas.height/2 + 4, "PURSUE INTO THE ASTEROID FIELD", "#00ffcc", 18);
+    spawnText(GAME_W/2, GAME_H/2 - 40, "IT'S BREAKING AWAY!", "#ff5555", 30);
+    spawnText(GAME_W/2, GAME_H/2 + 4, "PURSUE INTO THE ASTEROID FIELD", "#00ffcc", 18);
     updateUI();
 }
 
@@ -2113,7 +2136,7 @@ function chooseRunPerk(i) {
     p.apply();
     runPerksTaken.push(p.id);
     playSfx('powerup');
-    spawnText(canvas.width/2, canvas.height/2 - 60, p.title.toUpperCase(), "#33ff33", 22);
+    spawnText(GAME_W/2, GAME_H/2 - 60, p.title.toUpperCase(), "#33ff33", 22);
     finishRunPerks();
 }
 
@@ -2163,7 +2186,7 @@ function startGame(shipId, mode) {
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
     combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; fleetBattleActive = false; allies = []; capitalShips = [];
     runKills = 0; runBestCombo = 1; runGrazes = 0;
-    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0;
+    ship.x = GAME_W / 2; ship.y = GAME_H / 2; ship.xv = 0; ship.yv = 0;
     
     bullets = []; enemyBullets = []; powerups = []; targets = []; particles = []; lightTrails = []; floatingTexts = []; scrapDrops = [];
     targets3D = []; bullets3D = []; enemyBullets3D = [];
@@ -2212,15 +2235,15 @@ function spawnBossEncounter(bossKind, diffMult, speedMod) {
         for (let i = 0; i < numMinions; i++) {
             let ang = (i / numMinions) * Math.PI * 2;
             let dist = 250 + Math.random() * 60;
-            let sx = canvas.width/2 + Math.cos(ang) * dist;
-            let sy = canvas.height/2 + Math.sin(ang) * dist;
+            let sx = GAME_W/2 + Math.cos(ang) * dist;
+            let sy = GAME_H/2 + Math.sin(ang) * dist;
             spawnTarget("hive_minion", i === queenIndex ? 20 : 13, speedMod * 1.1, sx, sy);
             let m = targets[targets.length - 1];
             if (i === queenIndex) { m.isQueen = true; m.hp = Math.floor((10 + level * 0.5) * diffMult); m.maxHp = m.hp; }
             else { m.hp = 1; m.maxHp = 1; }
         }
         hiveSwarmActive = true; hiveSwarmTotal = numMinions; hiveFireTimer = 2.5; hiveEnraged = false;
-        spawnText(canvas.width/2, canvas.height/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
+        spawnText(GAME_W/2, GAME_H/2 - 20, "THE SWARM IS THE BOSS", "#ff33ff", 26);
     } else if (bossKind === "boss_dreadnought") {
         let bossR = 90 + (level * 1.0); spawnTarget("boss_dreadnought", bossR, speedMod * 0.15);
         let boss = targets[targets.length - 1];
@@ -2242,8 +2265,8 @@ function spawnBossEncounter(bossKind, diffMult, speedMod) {
         // Burrow cycle: it surfaces to hunt, then submerges (invulnerable, harmless, and
         // clearly telegraphed) before erupting again near the player.
         boss.wormPhase = "up"; boss.wormTimer = 9.0; boss.burrow = 0;
-        spawnText(canvas.width/2, canvas.height/2 - 20, "SOMETHING MOVES BENEATH", "#88cc44", 24);
-        spawnText(canvas.width/2, canvas.height/2 + 16, "ONLY THE HEAD IS VULNERABLE", "#ffcc00", 15);
+        spawnText(GAME_W/2, GAME_H/2 - 20, "SOMETHING MOVES BENEATH", "#88cc44", 24);
+        spawnText(GAME_W/2, GAME_H/2 + 16, "ONLY THE HEAD IS VULNERABLE", "#ffcc00", 15);
     } else {
         let bossR = 70 + (level * 1.5); spawnTarget("boss_station", bossR, speedMod * 0.3);
         let boss = targets[targets.length - 1];
@@ -2257,14 +2280,14 @@ function spawnBossEncounter(bossKind, diffMult, speedMod) {
 // for atmosphere (not interactive -- see the fleetBattleActive block in update()/render()).
 function spawnFleetBattle(diffMult, speedMod) {
     fleetBattleActive = true;
-    spawnText(canvas.width/2, canvas.height/2 - 30, "FLEET ENGAGEMENT", "#66ccff", 28);
-    spawnText(canvas.width/2, canvas.height/2 + 10, "WINGMEN INBOUND -- HOLD THE LINE", "#ffcc00", 15);
+    spawnText(GAME_W/2, GAME_H/2 - 30, "FLEET ENGAGEMENT", "#66ccff", 28);
+    spawnText(GAME_W/2, GAME_H/2 + 10, "WINGMEN INBOUND -- HOLD THE LINE", "#ffcc00", 15);
 
     allies.push({ x: ship.x - 60, y: ship.y - 40, xv: 0, yv: 0, angle: 0, r: 13, hp: 2, maxHp: 2, fireTimer: 0.6 + Math.random()*0.6 });
     allies.push({ x: ship.x + 60, y: ship.y - 40, xv: 0, yv: 0, angle: 0, r: 13, hp: 2, maxHp: 2, fireTimer: 0.6 + Math.random()*0.6 });
 
-    capitalShips.push({ side: "ally", x: canvas.width*0.08, y: canvas.height*0.22, scale: 3.0, driftPhase: Math.random()*Math.PI*2, beamTimer: 2 + Math.random()*2, firing: 0 });
-    capitalShips.push({ side: "enemy", x: canvas.width*0.92, y: canvas.height*0.78, scale: 3.3, driftPhase: Math.random()*Math.PI*2, beamTimer: 3 + Math.random()*2, firing: 0 });
+    capitalShips.push({ side: "ally", x: GAME_W*0.08, y: GAME_H*0.22, scale: 3.0, driftPhase: Math.random()*Math.PI*2, beamTimer: 2 + Math.random()*2, firing: 0 });
+    capitalShips.push({ side: "enemy", x: GAME_W*0.92, y: GAME_H*0.78, scale: 3.3, driftPhase: Math.random()*Math.PI*2, beamTimer: 3 + Math.random()*2, firing: 0 });
 
     let numAsteroids = Math.floor((1 + Math.floor(level / 3)) * diffMult);
     for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 30 + Math.random()*40, speedMod);
@@ -2288,17 +2311,17 @@ function startLevel() {
     sentinelSpawnQueue = 0;
     bossPursuit = false; bossDeathTimer = 0;
     fleetBattleActive = false; allies = []; capitalShips = [];
-    ship.x = canvas.width / 2; ship.y = canvas.height / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
+    ship.x = GAME_W / 2; ship.y = GAME_H / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
     if (gameMode === "campaign") {
         if (level === 10) unlockAchievement('level_10');
-        if (level === 26) { spawnText(canvas.width/2, canvas.height/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(canvas.width/2, canvas.height/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
+        if (level === 26) { spawnText(GAME_W/2, GAME_H/2 - 20, "CAMPAIGN COMPLETE!", "#33ff33", 26); spawnText(GAME_W/2, GAME_H/2 + 20, "SURVIVING FOR SCORE...", "#ffcc00", 16); unlockAchievement('level_26'); }
         if (level === 20 && !shipBuilderUnlocked) {
             shipBuilderUnlocked = true;
             try { localStorage.setItem(pKey("sfc_shipBuilderUnlocked"), "1"); } catch(e) {}
             updateBuilderUnlockUI();
-            spawnText(canvas.width/2, canvas.height/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
+            spawnText(GAME_W/2, GAME_H/2 - 20, "SHIP BUILDER UNLOCKED!", "#00ffc8", 24);
             unlockAchievement('level_20');
         }
     }
@@ -2308,7 +2331,7 @@ function startLevel() {
 
     if (is3DMode) {
         levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0; tookDamageThisHyperspace = false;
-        spawnText(canvas.width/2, canvas.height/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40); spawnText(canvas.width/2, canvas.height/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
+        spawnText(GAME_W/2, GAME_H/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40); spawnText(GAME_W/2, GAME_H/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
         updateUI();
         return;
     }
@@ -2334,7 +2357,7 @@ function startLevel() {
             // Boss Rush: every boss back to back, no filler, no hyperspace. Difficulty keeps
             // climbing with the wave number via the shared speedMod/diffMult curve.
             spawnBossEncounter(BOSS_ROTATION[(level - 1) % BOSS_ROTATION.length], diffMult, speedMod);
-            spawnText(canvas.width/2, 80, "WAVE " + level, "#ffcc00", 24);
+            spawnText(GAME_W/2, 80, "WAVE " + level, "#ffcc00", 24);
         } else if (level % 5 === 0 && !is3DMode) {
             spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
         } else if (level % 6 === 0 && level % 5 !== 0) {
@@ -2370,12 +2393,17 @@ function loop(timestamp) {
         let dt = (timestamp - lastTime) / 1000; if (dt > 0.1 || isNaN(dt)) dt = 0.016; lastTime = timestamp; frames++;
         updateAchievementToasts(dt);
 
-        if (gameState === "PLAYING") { if (is3DMode) update3D(dt); else update(dt); }
+        if (gameState === "PLAYING") {
+            // A single frozen frame on a big kill reads as impact rather than a stutter --
+            // real time (not sim time) drains it so it can't be starved by a slow update().
+            if (hitstopTimer > 0) hitstopTimer -= dt;
+            else if (is3DMode) update3D(dt); else update(dt);
+        }
         else if (gameState === "LEVEL_TRANSITION") { hyperspace += dt; ship.x += 1000 * dt; if (hyperspace > 2.0) { hyperspace = 0; startLevel(); gameState = "PLAYING"; } } 
         else if (gameState === "MENU") {
             targets.forEach(t => { 
                 t.x += t.xv * 0.5; t.y += t.yv * 0.5; t.angle += t.rotSpeed * dt * 0.5; 
-                const wrap = (obj) => { if (obj.x < -obj.r) obj.x = canvas.width + obj.r; else if (obj.x > canvas.width + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = canvas.height + obj.r; else if (obj.y > canvas.height + obj.r) obj.y = -obj.r; };
+                const wrap = (obj) => { if (obj.x < -obj.r) obj.x = GAME_W + obj.r; else if (obj.x > GAME_W + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = GAME_H + obj.r; else if (obj.y > GAME_H + obj.r) obj.y = -obj.r; };
                 wrap(t); 
             });
         }
@@ -2401,8 +2429,8 @@ function update3D(dt) {
     // feel as the 2D mode's mouse-thrust, and it works on mobile through the same joystick input
     // that already drives mouse.x/y (WASD panning alone left touch players unable to dodge at all).
     let strafeRange = 900 + stats.thrust * 40;
-    let targetX = ((mouse.x - canvas.width / 2) / (canvas.width / 2)) * strafeRange;
-    let targetY = ((mouse.y - canvas.height / 2) / (canvas.height / 2)) * strafeRange;
+    let targetX = ((mouse.x - GAME_W / 2) / (GAME_W / 2)) * strafeRange;
+    let targetY = ((mouse.y - GAME_H / 2) / (GAME_H / 2)) * strafeRange;
     let followRate = Math.min(1, dt * 5);
     camX += (targetX - camX) * followRate;
     camY += (targetY - camY) * followRate;
@@ -2419,8 +2447,8 @@ function update3D(dt) {
     if (fireCooldown > 0) fireCooldown -= dt;
     if ((keys["Space"] || mouse.leftDown) && fireCooldown <= 0 && !overheated) {
         playSfx('shoot');
-        let vx = ((mouse.x - canvas.width/2) / FOV) * 3000;
-        let vy = ((mouse.y - canvas.height/2) / FOV) * 3000;
+        let vx = ((mouse.x - GAME_W/2) / FOV) * 3000;
+        let vy = ((mouse.y - GAME_H/2) / FOV) * 3000;
         let c = ShipDesigns[selectedShipType].laserColor;
         bullets3D.push({ x: camX, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
         if (multishotTimer>0) {
@@ -2428,7 +2456,7 @@ function update3D(dt) {
             bullets3D.push({ x: camX + 30, y: camY, z: 0, vx: vx, vy: vy, vz: 3000, r: 5, color: c, isEmpBolt: selectedShipType==='nebuchadnezzar', isHack: selectedShipType==='fsociety' });
         }
         fireCooldown = stats.fireRate * runFireRateMult; heat += stats.heat * runHeatMult;
-        if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(canvas.width/2, canvas.height/2+50, "OVERHEAT", "#ff0000", 18); }
+        if (heat >= 100) { heat = 100; overheated = true; playSfx('glitch'); spawnText(GAME_W/2, GAME_H/2+50, "OVERHEAT", "#ff0000", 18); }
         updateUI();
     }
     
@@ -2535,7 +2563,7 @@ function update3D(dt) {
             let b = bullets3D[j];
             if (Math.abs(b.z - t.z) < 150 && Math.hypot(b.x - t.x, b.y - t.y) < t.r + 20) {
                 let dmg = (b.isEmpBolt ? 2 : (selectedShipType==='enterprise' ? 2 : 1)) + (upgrades.power || 0) + runBonusDamage;
-                t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(canvas.width/2, canvas.height/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
+                t.hp -= dmg; t.hitFlash = 0.1; playSfx('hit'); spawnText(GAME_W/2, GAME_H/2, `-${dmg}`, "#fff"); bullets3D.splice(j, 1);
                 if (t.isBoss) spawnBossImpact(b.x, b.y, b.z, false);
                 if (t.hp <= 0) {
                     playSfx('boom'); shake += 5; combo++; if(combo>10) combo=10; comboTimer = 4.0 * runComboHold; lifetimeStats.kills++; runKills++;
@@ -2546,7 +2574,7 @@ function update3D(dt) {
                         score += diffScoreMult * 1500 * combo;
                         currentRunScrap += Math.round(10 * runScrapMult);
                         lifetimeStats.bossKills++;
-                        spawnText(canvas.width/2, canvas.height/2 - 30, bossPursuitName + " DESTROYED", "#ffcc00", 30);
+                        spawnText(GAME_W/2, GAME_H/2 - 30, bossPursuitName + " DESTROYED", "#ffcc00", 30);
                     } else {
                         score += diffScoreMult *(t.type==="satellite" ? 75 : 50) * combo; currentRunScrap += (t.type==="satellite" ? 5 : 2);
                     }
@@ -2581,7 +2609,7 @@ function update(dt) {
     else { heat -= 20 * dt; if (heat < 0) heat = 0; }
     regenShields(dt);
 
-    const wrap = (obj) => { if (obj.x < -obj.r) obj.x = canvas.width + obj.r; else if (obj.x > canvas.width + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = canvas.height + obj.r; else if (obj.y > canvas.height + obj.r) obj.y = -obj.r; };
+    const wrap = (obj) => { if (obj.x < -obj.r) obj.x = GAME_W + obj.r; else if (obj.x > GAME_W + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = GAME_H + obj.r; else if (obj.y > GAME_H + obj.r) obj.y = -obj.r; };
     wrap(ship);
 
     if (selectedShipType === "lightship" && invulnTimer <= 0) {
@@ -2711,12 +2739,12 @@ function update(dt) {
             }
         }
         if (t.type === "sentinel") { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); t.angle = angToPlayer; let spd = t.chaseSpeed || 3; t.xv = Math.cos(angToPlayer) * spd; t.yv = Math.sin(angToPlayer) * spd; }
-        if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); enemyBullets.push({ x: t.x, y: t.y, xv: 6 * Math.cos(angToPlayer), yv: 6 * Math.sin(angToPlayer), range: canvas.width * 0.8 }); playSfx('enemyShoot'); t.fireTimer = 2.0; } }
+        if (t.type === "tie_advanced" && t.fireTimer !== undefined) { t.fireTimer -= dt; if (t.fireTimer <= 0) { let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); enemyBullets.push({ x: t.x, y: t.y, xv: 6 * Math.cos(angToPlayer), yv: 6 * Math.sin(angToPlayer), range: GAME_W * 0.8 }); playSfx('enemyShoot'); t.fireTimer = 2.0; } }
         if (t.type === "boss_station") {
             if (t.spawnTimer === undefined) t.spawnTimer = 2; t.spawnTimer -= dt;
             if (t.spawnTimer <= 0 && targets.length < 15) { spawnTarget("tie_fighter", 15, 1.5 + (level * 0.1), t.x, t.y); t.spawnTimer = 4; }
             t.chargeTimer += dt;
-            if (t.chargeTimer > 5.0) { playSfx('boom'); shake += 10; t.chargeTimer = 0; let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); for(let i=0; i<5; i++) enemyBullets.push({ x: t.x, y: t.y, xv: 8 * Math.cos(angToPlayer+(i*0.1-0.2)), yv: 8 * Math.sin(angToPlayer+(i*0.1-0.2)), range: canvas.width }); }
+            if (t.chargeTimer > 5.0) { playSfx('boom'); shake += 10; t.chargeTimer = 0; let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x); for(let i=0; i<5; i++) enemyBullets.push({ x: t.x, y: t.y, xv: 8 * Math.cos(angToPlayer+(i*0.1-0.2)), yv: 8 * Math.sin(angToPlayer+(i*0.1-0.2)), range: GAME_W }); }
         }
         if (t.type === "boss_mothership" && t.nodes) { t.nodes.forEach(n => n.ang += dt); }
         if (t.type === "boss_dreadnought") {
@@ -2724,7 +2752,7 @@ function update(dt) {
             if (t.broadsideTimer <= 0) {
                 playSfx('boom'); shake += 8; t.broadsideTimer = 3.0;
                 let angToPlayer = Math.atan2(ship.y - t.y, ship.x - t.x);
-                [-0.6, -0.3, 0, 0.3, 0.6].forEach(off => enemyBullets.push({ x: t.x, y: t.y, xv: 7*Math.cos(angToPlayer+off), yv: 7*Math.sin(angToPlayer+off), range: canvas.width }));
+                [-0.6, -0.3, 0, 0.3, 0.6].forEach(off => enemyBullets.push({ x: t.x, y: t.y, xv: 7*Math.cos(angToPlayer+off), yv: 7*Math.sin(angToPlayer+off), range: GAME_W }));
             }
         }
         if (t.type === "boss_carrier") {
@@ -2807,7 +2835,7 @@ function update(dt) {
             let minions = targets.filter(m => m.type === "hive_minion");
             if (minions.length > 0) {
                 playSfx('enemyShoot'); shake += 4;
-                minions.forEach(m => { let ang = Math.atan2(ship.y - m.y, ship.x - m.x); enemyBullets.push({ x: m.x, y: m.y, xv: 6 * Math.cos(ang), yv: 6 * Math.sin(ang), range: canvas.width * 0.8 }); });
+                minions.forEach(m => { let ang = Math.atan2(ship.y - m.y, ship.x - m.x); enemyBullets.push({ x: m.x, y: m.y, xv: 6 * Math.cos(ang), yv: 6 * Math.sin(ang), range: GAME_W * 0.8 }); });
             }
             hiveFireTimer = hiveEnraged ? 1.6 : 2.6;
         }
@@ -2837,7 +2865,7 @@ function update(dt) {
                 a.xv = (vx / norm) * spd; a.yv = (vy / norm) * spd; a.angle = angToTarget;
                 a.fireTimer -= dt;
                 if (a.fireTimer <= 0 && nearestDist < 420) {
-                    bullets.push({ x: a.x, y: a.y, xv: 10 * Math.cos(angToTarget), yv: 10 * Math.sin(angToTarget), range: canvas.width * 0.8, isAlly: true });
+                    bullets.push({ x: a.x, y: a.y, xv: 10 * Math.cos(angToTarget), yv: 10 * Math.sin(angToTarget), range: GAME_W * 0.8, isAlly: true });
                     a.fireTimer = 1.1 + Math.random() * 0.7;
                 }
             } else {
@@ -2948,8 +2976,8 @@ function update(dt) {
                 // Elites pay out roughly double, on top of whatever the type itself pays -- the
                 // ship-side equivalent of an ore asteroid's guaranteed bonus.
                 let eliteMult = t.isElite ? 2.2 : 1;
-                if (t.isElite) spawnText(t.x, t.y - 18, "ELITE DOWN", "#ffcc33", 14);
-                if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
+                if (t.isElite) { spawnText(t.x, t.y - 18, "ELITE DOWN", "#ffcc33", 14); if (!REDUCE_MOTION) hitstopTimer = 0.04; }
+                if (t.type.startsWith("boss")) { score += diffScoreMult *1500*combo; shake = 25; if (!REDUCE_MOTION) hitstopTimer = 0.08; spawnScrap(t.x, t.y, 10); lifetimeStats.bossKills++; for(let k=0; k<6; k++) spawnTarget("asteroid", 30, diffMod * 1.5, t.x, t.y); }
                 else if (t.type === "star_destroyer") { score += diffScoreMult *100*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 6 : 3); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); spawnTarget("tie_interceptor", 25, diffMod * 1.2, t.x, t.y); }
                 else if (t.type === "tie_interceptor" || t.type === "tie_advanced") { score += diffScoreMult *50*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 4 : 2); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); spawnTarget("tie_fighter", 15, diffMod * 1.5, t.x, t.y); }
                 else if (t.type === "tie_fighter" || t.type === "sentinel") { score += diffScoreMult *25*eliteMult*combo; spawnScrap(t.x, t.y, t.isElite ? 3 : 1); }
@@ -3028,20 +3056,20 @@ function render3D() {
     // Near-black, not the colored-fog wash this used to be. A faint hue drifts with the level so
     // anomalies still have some mood to them, but at this saturation/lightness it reads as the
     // deep black of real space rather than an atmosphere.
-    ctx.fillStyle = `hsl(${level * 15}, 15%, 1.5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = `hsl(${level * 15}, 15%, 1.5%)`; ctx.fillRect(0, 0, GAME_W, GAME_H);
     ctx.save();
-    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake*SHAKE_SCALE, (Math.random()-0.5)*shake*SHAKE_SCALE); shake *= 0.9; if(shake < 0.5) shake = 0; }
 
-    let CX = canvas.width/2, CY = canvas.height/2;
+    let CX = GAME_W/2, CY = GAME_H/2;
 
     // A hint of distant nebula, not a haze sitting over the whole scene -- one dim patch, no
     // longer three overlapping washes bright enough to fog out the black of space.
     let nebulaHue = (level * 15) % 360;
-    let nx = canvas.width * 0.32 - camX * 0.015, ny = canvas.height * 0.28 - camY * 0.015;
-    let ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, canvas.width * 0.6);
+    let nx = GAME_W * 0.32 - camX * 0.015, ny = GAME_H * 0.28 - camY * 0.015;
+    let ng = ctx.createRadialGradient(nx, ny, 0, nx, ny, GAME_W * 0.6);
     ng.addColorStop(0, `hsla(${nebulaHue}, 40%, 30%, 0.045)`);
     ng.addColorStop(1, `hsla(${nebulaHue}, 40%, 30%, 0)`);
-    ctx.fillStyle = ng; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = ng; ctx.fillRect(0, 0, GAME_W, GAME_H);
 
     ctx.fillStyle = "#fff";
     stars3D.forEach(s => {
@@ -3158,13 +3186,13 @@ function render3D() {
     // actually flying, stays completely clear (the old full-width trapezoid cropped half the
     // screen away, and the flat rectangle that replaced it read as a HUD border, not a cockpit).
     let dashTop = 0.845;
-    let fx0 = canvas.width * 0.035, fx1 = canvas.width * 0.965;
-    let fy0 = canvas.height * 0.055, fy1 = canvas.height * dashTop;
-    let cut = canvas.height * 0.085;        // A-pillar chamfer across the corners
-    let archTop = canvas.height * 0.045;    // canopy rail bows up at the centre
-    let archBot = canvas.height * 0.05;     // dash falls away at the centre
-    let dashCX = canvas.width / 2;
-    let dashY = canvas.height * 0.928;
+    let fx0 = GAME_W * 0.035, fx1 = GAME_W * 0.965;
+    let fy0 = GAME_H * 0.055, fy1 = GAME_H * dashTop;
+    let cut = GAME_H * 0.085;        // A-pillar chamfer across the corners
+    let archTop = GAME_H * 0.045;    // canopy rail bows up at the centre
+    let archBot = GAME_H * 0.05;     // dash falls away at the centre
+    let dashCX = GAME_W / 2;
+    let dashY = GAME_H * 0.928;
 
     // One reusable outline. `startNew` is false when it's being appended to an enclosing rect
     // for an even-odd "fill everything except this hole" pass.
@@ -3181,42 +3209,42 @@ function render3D() {
 
     // Glass, drawn under the airframe so reflections sit behind the structure holding them.
     ctx.save(); canopyOutline(true); ctx.clip();
-    let reflGrad = ctx.createLinearGradient(canvas.width*0.08, canvas.height*0.02, canvas.width*0.62, canvas.height*0.62);
+    let reflGrad = ctx.createLinearGradient(GAME_W*0.08, GAME_H*0.02, GAME_W*0.62, GAME_H*0.62);
     reflGrad.addColorStop(0, "rgba(190, 225, 255, 0.10)");
     reflGrad.addColorStop(0.20, "rgba(190, 225, 255, 0.025)");
     reflGrad.addColorStop(0.36, "rgba(190, 225, 255, 0)");
-    ctx.fillStyle = reflGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = reflGrad; ctx.fillRect(0, 0, GAME_W, GAME_H);
     // A tighter highlight hugging the rail: curved glass catches light along its bend. Kept very
     // faint -- at any real opacity it reads as a grey bar laid across the view.
-    ctx.strokeStyle = "rgba(200, 235, 255, 0.045)"; ctx.lineWidth = canvas.height * 0.022;
+    ctx.strokeStyle = "rgba(200, 235, 255, 0.045)"; ctx.lineWidth = GAME_H * 0.022;
     ctx.beginPath();
-    ctx.moveTo(fx0 + cut, fy0 + canvas.height * 0.026);
-    ctx.quadraticCurveTo(dashCX, fy0 - archTop + canvas.height * 0.026, fx1 - cut, fy0 + canvas.height * 0.026);
+    ctx.moveTo(fx0 + cut, fy0 + GAME_H * 0.026);
+    ctx.quadraticCurveTo(dashCX, fy0 - archTop + GAME_H * 0.026, fx1 - cut, fy0 + GAME_H * 0.026);
     ctx.stroke();
     // Airframe shadow thrown onto the glass -- what actually puts the frame in front of the view.
-    let shadeGrad = ctx.createRadialGradient(CX, CY, canvas.height * 0.32, CX, CY, canvas.height * 0.74);
+    let shadeGrad = ctx.createRadialGradient(CX, CY, GAME_H * 0.32, CX, CY, GAME_H * 0.74);
     shadeGrad.addColorStop(0, "rgba(0,0,0,0)"); shadeGrad.addColorStop(1, "rgba(0,0,0,0.5)");
-    ctx.fillStyle = shadeGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = shadeGrad; ctx.fillRect(0, 0, GAME_W, GAME_H);
     ctx.restore();
 
     // Airframe: everything outside the opening is solid structure. Kept deliberately darker than
     // the starfield -- you are sitting in shadow looking out at a lit scene, and an airframe
     // brighter than the view reads as a window cut in a wall rather than a cockpit.
-    let hullGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    let hullGrad = ctx.createLinearGradient(0, 0, 0, GAME_H);
     hullGrad.addColorStop(0, "#1a1d22"); hullGrad.addColorStop(0.4, "#111317"); hullGrad.addColorStop(1, "#070809");
     ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, canvas.height);
+    ctx.rect(0, 0, GAME_W, GAME_H);
     canopyOutline(false);
     ctx.fillStyle = hullGrad; ctx.fill("evenodd");
 
     // Panel seams across the airframe, so it reads as assembled plate rather than a flat mask.
     ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, canvas.width, canvas.height); canopyOutline(false); ctx.clip("evenodd");
+    ctx.beginPath(); ctx.rect(0, 0, GAME_W, GAME_H); canopyOutline(false); ctx.clip("evenodd");
     ctx.strokeStyle = "rgba(255,255,255,0.045)"; ctx.lineWidth = 1;
     [0.16, 0.34, 0.66, 0.84].forEach(f => {
-        ctx.beginPath(); ctx.moveTo(canvas.width * f, 0); ctx.lineTo(canvas.width * f, canvas.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(GAME_W * f, 0); ctx.lineTo(GAME_W * f, GAME_H); ctx.stroke();
     });
-    ctx.beginPath(); ctx.moveTo(0, canvas.height * 0.93); ctx.lineTo(canvas.width, canvas.height * 0.93); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, GAME_H * 0.93); ctx.lineTo(GAME_W, GAME_H * 0.93); ctx.stroke();
     ctx.restore();
 
     // Machined lip around the opening: a dark seam with a lit inner edge.
@@ -3258,7 +3286,7 @@ function render3D() {
         ctx.beginPath(); ctx.moveTo(ax + nx * wA, ay + ny * wA); ctx.lineTo(bx + nx * wB, by + ny * wB); ctx.stroke();
     };
     // Centre spine off the rail
-    strut(dashCX, fy0 - archTop * 0.6, dashCX, fy0 + canvas.height * 0.075, 7, 3.5);
+    strut(dashCX, fy0 - archTop * 0.6, dashCX, fy0 + GAME_H * 0.075, 7, 3.5);
     // A-pillars sweeping in from the chamfered corners
     strut(fx0 + cut * 0.95, fy0 + 2, fx0 + cut * 0.08, fy0 + cut * 1.75, 7, 3);
     strut(fx1 - cut * 0.95, fy0 + 2, fx1 - cut * 0.08, fy0 + cut * 1.75, 7, 3);
@@ -3297,11 +3325,11 @@ function render3D() {
     ctx.beginPath();
     ctx.moveTo(fx1, fy1 - cut * 0.5);
     ctx.quadraticCurveTo(dashCX, fy1 + archBot, fx0, fy1 - cut * 0.5);
-    ctx.lineTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height); ctx.closePath();
+    ctx.lineTo(0, GAME_H); ctx.lineTo(GAME_W, GAME_H); ctx.closePath();
     ctx.clip();
-    let coamGrad = ctx.createLinearGradient(0, fy1 - cut * 0.5, 0, canvas.height);
+    let coamGrad = ctx.createLinearGradient(0, fy1 - cut * 0.5, 0, GAME_H);
     coamGrad.addColorStop(0, "#3a3f49"); coamGrad.addColorStop(0.22, "#22252b"); coamGrad.addColorStop(1, "#0b0c0f");
-    ctx.fillStyle = coamGrad; ctx.fillRect(0, fy1 - cut, canvas.width, canvas.height);
+    ctx.fillStyle = coamGrad; ctx.fillRect(0, fy1 - cut, GAME_W, GAME_H);
     // Vent slits follow the coaming curve rather than sitting on a flat line.
     ctx.fillStyle = "#0a0a0c";
     for (let i = -7; i <= 7; i++) {
@@ -3314,7 +3342,7 @@ function render3D() {
 
     // Central hub: a thick beveled ring, like a control-yoke mount
     ctx.save(); ctx.translate(dashCX, dashY);
-    let hubR = canvas.height * 0.052;
+    let hubR = GAME_H * 0.052;
     let ringGrad = ctx.createRadialGradient(-hubR*0.3, -hubR*0.3, hubR*0.2, 0, 0, hubR);
     ringGrad.addColorStop(0, "#5a5e68"); ringGrad.addColorStop(0.55, "#2c2e34"); ringGrad.addColorStop(1, "#141519");
     ctx.fillStyle = ringGrad; ctx.beginPath(); ctx.arc(0, 0, hubR, 0, Math.PI*2); ctx.fill();
@@ -3334,13 +3362,13 @@ function render3D() {
     ctx.restore();
 
     [-1, 1].forEach(side => {
-        let panelW = canvas.width * 0.15, panelH = canvas.height * 0.095;
-        let px = dashCX + side * canvas.width * 0.23 - (side < 0 ? panelW : 0);
+        let panelW = GAME_W * 0.15, panelH = GAME_H * 0.095;
+        let px = dashCX + side * GAME_W * 0.23 - (side < 0 ? panelW : 0);
         let py = dashY - panelH * 0.4;
 
         // secondary gauge between the hub and this screen: a 5-segment LED meter for
         // hull integrity (left) and combo multiplier (right)
-        let bx0 = dashCX + side * canvas.width * 0.115;
+        let bx0 = dashCX + side * GAME_W * 0.115;
         let segVal = side < 0 ? (playerHp / playerMaxHp) : (combo / 10);
         let segColor = side < 0 ? (playerHp / playerMaxHp < 0.3 ? "#ff3333" : "#33ff77") : "#ffaa00";
         let segBase = dashY + panelH * 0.32;
@@ -3436,7 +3464,7 @@ function render3D() {
         : `HYPERSPACE ANOMALY - TIME: ${Math.max(0, Math.ceil(levelTimer3D))}s`;
     ctx.font = "bold 15px Courier New"; ctx.textAlign = "center";
     let hudW = ctx.measureText(hudLabel).width;
-    let bannerY = canvas.height * 0.155;
+    let bannerY = GAME_H * 0.155;
     let boxW = Math.max(hudW + 24, bossPursuit ? 300 : 0), boxH = pursuitBoss ? 34 : 22;
     ctx.fillStyle = "rgba(0, 24, 22, 0.45)"; ctx.fillRect(CX - boxW/2, bannerY - 16, boxW, boxH);
     ctx.strokeStyle = bossPursuit ? "rgba(255, 90, 90, 0.5)" : "rgba(0, 255, 200, 0.35)";
@@ -3455,7 +3483,7 @@ function render3D() {
         let sx = (pursuitBoss.x - camX) * bs + CX, sy = (pursuitBoss.y - camY) * bs + CY;
         if (bs === 0 || sx < fx0 + 40 || sx > fx1 - 40 || sy < fy0 + 40 || sy > fy1 - 40) {
             let ang = Math.atan2(sy - CY, sx - CX);
-            let ex = CX + Math.cos(ang) * (canvas.width * 0.36), ey = CY + Math.sin(ang) * (canvas.height * 0.30);
+            let ex = CX + Math.cos(ang) * (GAME_W * 0.36), ey = CY + Math.sin(ang) * (GAME_H * 0.30);
             ctx.save(); ctx.translate(ex, ey); ctx.rotate(ang);
             ctx.fillStyle = "rgba(255, 90, 90, 0.75)";
             ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, 9); ctx.lineTo(-8, -9); ctx.closePath(); ctx.fill();
@@ -3471,17 +3499,17 @@ function render3D() {
         // Clipped to the canopy: unclipped it tinted the airframe cyan too, which lit the
         // interior brighter than the starfield and undid the sitting-in-shadow read entirely.
         ctx.save(); canopyOutline(true); ctx.clip();
-        let vign = ctx.createRadialGradient(CX, CY, canvas.height * 0.35, CX, CY, canvas.height * 0.8);
+        let vign = ctx.createRadialGradient(CX, CY, GAME_H * 0.35, CX, CY, GAME_H * 0.8);
         vign.addColorStop(0, "rgba(0, 255, 255, 0)");
         vign.addColorStop(1, `rgba(0, 255, 255, ${0.08 + (playerShield / 100) * 0.14})`);
-        ctx.fillStyle = vign; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = vign; ctx.fillRect(0, 0, GAME_W, GAME_H);
         ctx.restore();
     }
     
     ctx.textAlign = "center";
     floatingTexts.forEach(t => { ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.font = `bold ${t.size}px Courier New`; ctx.fillText(t.text, t.x, t.y); }); ctx.globalAlpha = 1.0;
     
-    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,GAME_W, GAME_H); }
 
     if (usingMouse) {
         ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
@@ -3495,16 +3523,16 @@ function render3D() {
 }
 
 function render() {
-    ctx.fillStyle = `hsl(${level * 15}, 30%, 5%)`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = `hsl(${level * 15}, 30%, 5%)`; ctx.fillRect(0, 0, GAME_W, GAME_H);
     
     ctx.save();
-    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; if(shake < 0.5) shake = 0; }
+    if (shake > 0) { ctx.translate((Math.random()-0.5)*shake*SHAKE_SCALE, (Math.random()-0.5)*shake*SHAKE_SCALE); shake *= 0.9; if(shake < 0.5) shake = 0; }
 
     ctx.fillStyle = "white";
     for(let i=0; i<100; i++) { 
         let layer = (i%3) + 1; let spdMult = layer * 0.5;
-        let sx = (Math.sin(i*74) * 10000 + frames * spdMult) % canvas.width; 
-        let sy = (Math.cos(i*31) * 10000 + frames * spdMult * 0.5) % canvas.height; 
+        let sx = (Math.sin(i*74) * 10000 + frames * spdMult) % GAME_W; 
+        let sy = (Math.cos(i*31) * 10000 + frames * spdMult * 0.5) % GAME_H; 
         if (gameState === "LEVEL_TRANSITION") { ctx.globalAlpha = layer*0.3; ctx.fillRect(Math.abs(sx), Math.abs(sy), hyperspace*50*layer, layer); } 
         else { ctx.globalAlpha = layer * 0.3; ctx.fillRect(Math.abs(sx), Math.abs(sy), layer, layer); ctx.globalAlpha = 1.0; }
     }
@@ -3513,9 +3541,9 @@ function render() {
         targets.forEach(t => {
             if (t.type.startsWith("boss") || t.type === "tie_advanced" || t.type === "sentinel" || t.isQueen) {
                 let dist = Math.hypot(ship.x - t.x, ship.y - t.y);
-                if (dist > canvas.width/2) {
+                if (dist > GAME_W/2) {
                     let ang = Math.atan2(t.y - ship.y, t.x - ship.x);
-                    let edgeX = ship.x + Math.cos(ang) * (canvas.width/2 - 30); let edgeY = ship.y + Math.sin(ang) * (canvas.height/2 - 30);
+                    let edgeX = ship.x + Math.cos(ang) * (GAME_W/2 - 30); let edgeY = ship.y + Math.sin(ang) * (GAME_H/2 - 30);
                     ctx.save(); ctx.translate(edgeX, edgeY); ctx.rotate(ang);
                     ctx.fillStyle = "rgba(255, 0, 0, 0.5)"; ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-10, 10); ctx.lineTo(-10, -10); ctx.fill();
                     ctx.restore();
@@ -3634,13 +3662,13 @@ function render() {
 
     if (chaosTimer > 0) {
         // Edge-only rainbow vignette so PARTY MODE reads as a fun cue without washing out play
-        let vign = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height*0.35, canvas.width/2, canvas.height/2, canvas.height*0.75);
+        let vign = ctx.createRadialGradient(GAME_W/2, GAME_H/2, GAME_H*0.35, GAME_W/2, GAME_H/2, GAME_H*0.75);
         let hue = (frames*8)%360;
         vign.addColorStop(0, `hsla(${hue},100%,60%,0)`); vign.addColorStop(1, `hsla(${hue},100%,60%,0.22)`);
-        ctx.fillStyle = vign; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = vign; ctx.fillRect(0, 0, GAME_W, GAME_H);
     }
 
-    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,canvas.width, canvas.height); }
+    if (nukeFlash > 0) { ctx.fillStyle = `rgba(255, 255, 255, ${nukeFlash})`; ctx.fillRect(0,0,GAME_W, GAME_H); }
     
     if (gameState === "PLAYING" && usingMouse) {
         ctx.save(); ctx.translate(mouse.x, mouse.y); ctx.rotate(frames * 0.05);
@@ -3656,11 +3684,11 @@ function render() {
 
 function drawMenuOverlays() {
     ctx.textAlign = "center";
-    if (gameState === "PAUSED") { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#fff"; ctx.font = "bold 40px Courier New"; ctx.fillText("PAUSED", canvas.width/2, canvas.height/2); }
-    if (gameState === "LEVEL_TRANSITION") { ctx.fillStyle = `rgba(0,0,0,${1 - hyperspace/2})`; ctx.fillRect(0,0,canvas.width, canvas.height); ctx.fillStyle = "#33ccff"; ctx.font = "bold 40px Courier New"; ctx.fillText("JUMPING TO SECTOR " + level, canvas.width/2, canvas.height/2); }
+    if (gameState === "PAUSED") { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,GAME_W, GAME_H); ctx.fillStyle = "#fff"; ctx.font = "bold 40px Courier New"; ctx.fillText("PAUSED", GAME_W/2, GAME_H/2); }
+    if (gameState === "LEVEL_TRANSITION") { ctx.fillStyle = `rgba(0,0,0,${1 - hyperspace/2})`; ctx.fillRect(0,0,GAME_W, GAME_H); ctx.fillStyle = "#33ccff"; ctx.font = "bold 40px Courier New"; ctx.fillText("JUMPING TO SECTOR " + level, GAME_W/2, GAME_H/2); }
     if (gameState === "GAMEOVER") {
-        ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        let cx = canvas.width / 2, cy = canvas.height / 2;
+        ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, 0, GAME_W, GAME_H);
+        let cx = GAME_W / 2, cy = GAME_H / 2;
         if (gameMode !== "campaign") {
             ctx.fillStyle = "#33ccff"; ctx.font = "bold 13px Courier New";
             ctx.fillText(gameMode === "rush" ? "☠ BOSS RUSH" : "\u{1F4C5} DAILY CHALLENGE · " + todaySeedString(), cx, cy - 162);

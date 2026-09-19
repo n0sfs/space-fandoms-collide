@@ -34,6 +34,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 * **Pilot Profiles:** Separate save slots for separate pilots — scrap, upgrades, achievements, custom ships, and stats never mix between siblings sharing a computer. Switch, create, or delete profiles from the main menu; your original save becomes "Pilot 1" automatically.
 * **Dimensional Shading:** Every ship, enemy, asteroid, and satellite carries richer gradient shading, rim lighting, and specular highlights for a more three-dimensional look, and the ship selector shows at-a-glance Speed/Fire Rate bars for every ship.
 * **Settings:** A volume slider (separate from mute) and a one-click "Reset Progress" for a fresh start.
+* **Sharper on Every Screen, Fairer When You Look Away:** The canvas now renders at your display's real pixel density instead of always at a fixed resolution, so the fight looks crisp on retina/high-DPI monitors and phones instead of soft and upscaled — with no change to the play field itself, so difficulty and density stay identical on every screen. Alt-tabbing away no longer leaves a held key or mouse button "stuck," and backgrounding the tab mid-run now auto-pauses instead of letting a throttled, unseen loop keep fighting without you. A big kill (a boss, an elite) lands with a beat of hitstop, tuned down under `prefers-reduced-motion` alongside the existing screen shake.
 
 ## 🕹️ Flight Manual
 **Desktop:**
@@ -52,7 +53,7 @@ Play the live demo here: **https://n0sfs.github.io/space-fandoms-collide/**
 No build tools, package managers, or local servers are required. Simply clone the repository and open `index.html` in any modern web browser.
 
 ## ✅ Testing
-An opt-in self-test harness ships alongside the game: open `index.html?test=1` in a browser to run ~104 automated checks (rendering, the full difficulty/level sweep, boss rotation fairness, the perk system, Boss Rush and Daily Challenge determinism, achievement unlock paths, profile isolation, and more) and see a visual pass/fail report. It only loads with that query flag, so it has zero effect on normal play, and every destructive check runs under a disposable pilot profile that's deleted when the run finishes.
+An opt-in self-test harness ships alongside the game: open `index.html?test=1` in a browser to run ~109 automated checks (rendering, the full difficulty/level sweep, boss rotation fairness, the perk system, Boss Rush and Daily Challenge determinism, achievement unlock paths, profile isolation, DPR-aware aim mapping, and more) and see a visual pass/fail report. It only loads with that query flag, so it has zero effect on normal play, and every destructive check runs under a disposable pilot profile that's deleted when the run finishes.
 
 ## ⚖️ Disclaimer & Copyright
 **Space Fandoms Collide** is a free, non-commercial fan tribute built for educational and portfolio purposes. 

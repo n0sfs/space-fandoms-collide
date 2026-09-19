@@ -25,7 +25,7 @@
     // the opposite side -- offsetting inward instead guarantees it stays on-screen regardless of
     // where the target is, while still aiming at the target's real (tracked) position each frame.
     function positionShipNear(target, dist) {
-        let dx = (canvas.width / 2) - target.x, dy = (canvas.height / 2) - target.y;
+        let dx = (GAME_W / 2) - target.x, dy = (GAME_H / 2) - target.y;
         let norm = Math.hypot(dx, dy) || 1;
         ship.x = target.x + (dx / norm) * dist;
         ship.y = target.y + (dy / norm) * dist;
@@ -786,6 +786,61 @@
         if (hullResilience('tiefighter').damageMult !== 1) throw new Error('fast hulls should get no damage resistance');
         if (!(hullResilience('borg').shieldRegen > 0)) throw new Error('borg should regenerate shields');
         if (hullResilience('tiefighter').shieldRegen !== 0) throw new Error('fast hulls should not regenerate shields');
+    });
+
+    test('the canvas backing store is scaled by devicePixelRatio but the logical play field stays fixed', () => {
+        // GAME_W/GAME_H must never move -- they're the coordinate space every spawn bound and
+        // entity position in the game is written against, and they have to stay identical on
+        // every monitor so difficulty/density never varies by DPR. Only the actual backing-store
+        // pixel count (and the one-time ctx.scale that makes it transparent to drawing code)
+        // should track devicePixelRatio, purely for crisper rendering on retina/high-DPI screens.
+        if (GAME_W !== 1000 || GAME_H !== 750) throw new Error('logical play field size must stay fixed regardless of DPR');
+        if (canvas.width !== GAME_W * DPR || canvas.height !== GAME_H * DPR) throw new Error('canvas backing store should be GAME_W/GAME_H * DPR');
+    });
+
+    test('mouse aim maps to logical GAME_W/GAME_H space, not the raw (DPR-scaled) canvas backing store', () => {
+        // The classic regression here: converting a client-pixel mousemove into game coordinates
+        // using the *backing-store* width/height instead of the logical size silently doubles (or
+        // triples) the aim point on any DPR>1 display -- correct at DPR=1 and broken everywhere else.
+        let rect = canvas.getBoundingClientRect();
+        let clientX = rect.left + rect.width * 0.75, clientY = rect.top + rect.height * 0.25;
+        canvas.dispatchEvent(new MouseEvent('mousemove', { clientX, clientY, bubbles: true }));
+        if (Math.abs(mouse.x - GAME_W * 0.75) > 2) throw new Error(`mouse.x should land near ${GAME_W * 0.75}, got ${mouse.x}`);
+        if (Math.abs(mouse.y - GAME_H * 0.25) > 2) throw new Error(`mouse.y should land near ${GAME_H * 0.25}, got ${mouse.y}`);
+    });
+
+    test('losing window focus clears held keys and mouse buttons instead of leaving them stuck down', () => {
+        // Alt-tabbing away mid-keypress (or mid-click) never delivers the matching keyup/mouseup --
+        // without a blur handler, the held input stays "down" in state and the ship keeps
+        // thrusting/firing the instant focus returns, with nothing actually pressed anymore.
+        keys['ArrowUp'] = true; mouse.leftDown = true; mouse.rightDown = true;
+        window.dispatchEvent(new Event('blur'));
+        if (keys['ArrowUp']) throw new Error('held key should be cleared on window blur');
+        if (mouse.leftDown || mouse.rightDown) throw new Error('held mouse buttons should be cleared on window blur');
+    });
+
+    test('backgrounding the tab mid-run auto-pauses instead of letting a throttled loop fight on unseen', () => {
+        startGame('xwing'); gameState = 'PLAYING';
+        let restoreVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        try { document.dispatchEvent(new Event('visibilitychange')); }
+        finally {
+            if (restoreVisibility) Object.defineProperty(document, 'visibilityState', restoreVisibility);
+            else delete document.visibilityState;
+        }
+        if (gameState !== 'PAUSED') throw new Error('tab going hidden mid-run should auto-pause');
+        togglePause();
+    });
+
+    test('killing a boss triggers a brief hitstop', () => {
+        startGame('xwing'); level = 5; startLevel(); gameState = 'PLAYING';
+        let boss = targets.find(t => t.type.startsWith('boss'));
+        boss.hp = 1; boss.maxHp = 1; boss.x = ship.x; boss.y = ship.y - 40;
+        mouse.leftDown = true; fireCooldown = 0; invulnTimer = 999;
+        let killed = false;
+        for (let f = 0; f < 20 && !killed; f++) { mouse.x = boss.x; mouse.y = boss.y; update(0.016); killed = !targets.includes(boss); }
+        if (!killed) throw new Error('boss did not die within the frame budget');
+        if (!(hitstopTimer > 0)) throw new Error('a boss kill should set a positive hitstopTimer');
     });
 
     // Clean up: leave the throwaway profile and go back to whatever was active before the run.
