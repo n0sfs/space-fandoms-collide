@@ -416,9 +416,43 @@
     test('clearing a hyperspace anomaly untouched unlocks "untouchable"', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 7; startLevel();
+        // A hyperspace level now opens with a short 2D approach (see the dedicated approach-phase
+        // tests below) -- jump straight to the phase this test actually cares about.
+        beginHyperspaceTransition();
         targets3D = []; enemyBullets3D = []; levelTimer3D = 0.001;
         for (let f = 0; f < 5; f++) update3D(0.016);
         if (!unlockedAch['untouchable']) throw new Error('untouchable not unlocked');
+    });
+
+    test('a hyperspace level opens with an ordinary 2D approach, not straight into the 3D anomaly', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 7; startLevel();
+        if (is3DMode) throw new Error('hyperspace level should open in 2D, not the cockpit');
+        if (!hyperspaceApproachActive) throw new Error('the approach phase should be active immediately after startLevel()');
+        if (!hyperspaceRift) throw new Error('a rift should be seeded for the approach phase');
+    });
+
+    test('the hyperspace approach phases into the 3D anomaly once its timer runs out', () => {
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 7; startLevel();
+        hyperspaceApproachTimer = 0.001;
+        update(0.016);
+        if (hyperspaceApproachActive) throw new Error('approach phase should have ended');
+        if (!is3DMode) throw new Error('running out the approach timer should phase into the 3D anomaly');
+        if (levelTimer3D <= 0) throw new Error('the anomaly survival clock should be running after the phase-in');
+    });
+
+    test('clearing every target during a hyperspace approach does not skip the anomaly early', () => {
+        // The approach phase is timer-gated, not wave-gated -- killing everything fast must not
+        // trigger the normal "field is clear, advance the level" path and skip the rift entirely.
+        gameDifficulty = 'easy';
+        startGame('xwing'); level = 7; startLevel();
+        let levelBefore = level;
+        targets = []; sentinelSpawnQueue = 0;
+        update(0.016);
+        if (level !== levelBefore) throw new Error('an empty field during the approach must not advance the level early');
+        if (!hyperspaceApproachActive) throw new Error('the approach phase should still be running');
+        if (is3DMode) throw new Error('clearing the field early must not phase into the anomaly ahead of the timer');
     });
 
     test('nuke damages a boss but never destroys it outright', () => {
@@ -555,6 +589,11 @@
     test('the 3D scene stays dark -- no bright colour wash from the nebula backdrop', () => {
         gameDifficulty = 'easy';
         startGame('xwing'); level = 7; startLevel(); gameState = 'PLAYING';
+        // A hyperspace level no longer resets targets3D synchronously at startLevel() -- that now
+        // only happens once the approach phase hands off via beginHyperspaceTransition(). Reset it
+        // explicitly so this test measures the cockpit backdrop itself, not whatever targets3D
+        // happened to be left over from an earlier test's pursuit/anomaly state.
+        targets3D = [];
         render3D();
         // Average brightness over a patch of open sky rather than trusting a single pixel -- by
         // this point in the suite the starfield has been advanced by every earlier test that

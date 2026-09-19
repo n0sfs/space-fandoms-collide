@@ -458,6 +458,8 @@ let hiveSwarmActive = false, hiveSwarmTotal = 0, hiveFireTimer = 0, hiveEnraged 
 // and Hive swarms have no one thing to chase, so they stay a 2D fight start to finish.
 let bossPursuit = false, bossPursuitName = "", bossDeathTimer = 0;
 const BOSS_PURSUIT_THRESHOLD = 0.5;   // fraction of max HP at which it breaks and runs
+let hyperspaceApproachActive = false, hyperspaceApproachTimer = 0, hyperspaceRift = null;
+const HYPERSPACE_APPROACH_DURATION = 9;   // seconds of ordinary 2D flight before the rift pulls the ship in
 const BOSS_DISPLAY_NAMES = {
     boss_station: "SUPERLASER STATION", boss_mothership: "MOTHERSHIP",
     boss_dreadnought: "DREADNOUGHT", boss_carrier: "BOSS CARRIER", boss_worm: "SPACE WORM",
@@ -646,7 +648,7 @@ if (volumeSlider) {
 
 if (resumeBtn) { const resumeAction = (e) => { if(e) e.preventDefault(); initAudio(); if (gameState === "PAUSED") togglePause(); }; resumeBtn.addEventListener("click", resumeAction); resumeBtn.addEventListener("touchstart", resumeAction, { passive: false }); }
 if (restartGameBtn) { const restartGameAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); startGame(selectedShipType); }; restartGameBtn.addEventListener("click", restartGameAction); restartGameBtn.addEventListener("touchstart", restartGameAction, { passive: false }); }
-if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; is3DMode = false; targets3D = []; bossEffects3D = []; fleetBattleActive = false; allies = []; capitalShips = []; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
+if (quitBtn) { const quitAction = (e) => { if(e) e.preventDefault(); initAudio(); if (pauseOverlay) pauseOverlay.classList.add("hidden"); if (typeof perkOverlay !== "undefined" && perkOverlay) perkOverlay.classList.add("hidden"); if (menuOverlay) menuOverlay.classList.remove("hidden"); bullets = []; enemyBullets = []; particles = []; powerups = []; lightTrails = []; gameState = "MENU"; hiveSwarmActive = false; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; is3DMode = false; targets3D = []; bossEffects3D = []; fleetBattleActive = false; allies = []; capitalShips = []; hyperspaceApproachActive = false; hyperspaceApproachTimer = 0; hyperspaceRift = null; if (swarmBarEl) swarmBarEl.classList.add("hidden"); if (typeof updateModeUI === "function") updateModeUI(); }; quitBtn.addEventListener("click", quitAction); quitBtn.addEventListener("touchstart", quitAction, { passive: false }); }
 
 function triggerNuke() {
     if (bombs <= 0 || gameState !== "PLAYING") return;
@@ -859,6 +861,42 @@ function drawCapitalShip(ctx, c) {
             ctx.restore();
         }
     }
+}
+
+// A slowly-forming vortex that telegraphs the rift a hyperspace level's approach phase is
+// building toward -- two counter-rotating spiral arms plus a bright core, intensifying (faster
+// spin, hotter glow) as hyperspaceApproachTimer runs out toward beginHyperspaceTransition().
+function drawHyperspaceRift(ctx, rift, urgency) {
+    ctx.save();
+    ctx.translate(rift.x, rift.y);
+    let pulse = 1 + Math.sin(rift.t * 3) * 0.08 * (1 + urgency);
+    let coreR = (18 + urgency * 14) * pulse;
+
+    let glow = ctx.createRadialGradient(0, 0, 0, 0, 0, coreR * 3.2);
+    glow.addColorStop(0, `rgba(255, 60, 255, ${0.5 + urgency * 0.3})`);
+    glow.addColorStop(0.4, "rgba(150, 0, 220, 0.22)");
+    glow.addColorStop(1, "rgba(150, 0, 220, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, coreR * 3.2, 0, Math.PI * 2); ctx.fill();
+
+    for (let arm = 0; arm < 2; arm++) {
+        let dir = arm === 0 ? 1 : -1;
+        ctx.strokeStyle = arm === 0 ? "rgba(255, 100, 255, 0.75)" : "rgba(100, 220, 255, 0.6)";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let i = 0; i <= 24; i++) {
+            let f = i / 24;
+            let ang = dir * (rift.t * (2.2 + urgency * 2) + f * Math.PI * 4);
+            let rad = coreR * (0.25 + f * 1.15);
+            let x = Math.cos(ang) * rad, y = Math.sin(ang) * rad * 0.9;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = `rgba(255, 245, 255, ${0.8 + urgency * 0.2})`;
+    ctx.beginPath(); ctx.arc(0, 0, coreR * 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
 }
 
 function createBolt(angOffset, spd = 12, isEnemy = false, customX = null, customY = null, customAng = null) {
@@ -1699,7 +1737,7 @@ const TargetDesigns = {
             ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(0, 0, r/3, 0, Math.PI*2); ctx.fill();
         }
     },
-    tie_fighter: { draw: (ctx, r) => { ShipDesigns.tiefighter.draw(ctx, r, false); } },
+    tie_fighter: { draw: (ctx, r) => { ShipDesigns.tiefighter.draw(ctx, r, true); } },
     satellite: {
         draw: (ctx, r) => {
             popHalo(ctx, r, "#00ffcc", 0.45);
@@ -2184,7 +2222,7 @@ function startGame(shipId, mode) {
     if (gameMode === "rush") diffScoreMult *= 1.3;
     lifetimeStats.gamesPlayed = (lifetimeStats.gamesPlayed || 0) + 1; saveGameData();
     bombs = 1 + (upgrades.bombs || 0); playerMaxShield = 100 + ((upgrades.shield || 0) * 20); playerHp = playerMaxHp; playerShield = playerMaxShield;
-    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; fleetBattleActive = false; allies = []; capitalShips = [];
+    combo = 1; comboTimer = 0; heat = 0; overheated = false; multishotTimer = 0; rapidFireTimer = 0; slowmoTimer = 0; chaosTimer = 0; fireCooldown = 0; invulnTimer = 3.0; hyperspace = 0; nukeFlash = 0; sentinelSpawnQueue = 0; bossPursuit = false; bossDeathTimer = 0; fleetBattleActive = false; allies = []; capitalShips = []; hyperspaceApproachActive = false; hyperspaceApproachTimer = 0; hyperspaceRift = null;
     runKills = 0; runBestCombo = 1; runGrazes = 0;
     ship.x = GAME_W / 2; ship.y = GAME_H / 2; ship.xv = 0; ship.yv = 0;
     
@@ -2304,6 +2342,46 @@ function spawnFleetBattle(diffMult, speedMod) {
     for (let i = 0; i < numSentinels; i++) spawnTarget("sentinel", 12, speedMod * 1.1);
 }
 
+// --- HYPERSPACE APPROACH (ordinary flight -> rift forms -> phases into the 3D anomaly) ---
+// A hyperspace level used to cut straight to the cockpit with zero lead-in. Now it opens as a
+// normal, lighter 2D patrol while a rift visibly forms and grows in the field; once the timer
+// runs out, beginHyperspaceTransition() hands off to the existing 3D anomaly exactly the way a
+// wounded boss hands off to its own cockpit pursuit.
+function beginHyperspaceApproach(diffMult, speedMod) {
+    hyperspaceApproachActive = true;
+    hyperspaceApproachTimer = HYPERSPACE_APPROACH_DURATION;
+    hyperspaceRift = { x: GAME_W / 2, y: GAME_H / 2, t: 0 };
+    spawnText(GAME_W/2, GAME_H/2 - 20, "SPATIAL RIFT DETECTED", "#ff33ff", 24);
+    spawnText(GAME_W/2, GAME_H/2 + 12, "HOLD YOUR COURSE", "#00ffff", 15);
+
+    let numAsteroids = Math.floor((2 + Math.floor(level / 3)) * diffMult); if (numAsteroids < 1 && gameDifficulty !== 'easy') numAsteroids = 1;
+    for (let i = 0; i < numAsteroids; i++) spawnTarget("asteroid", 25 + Math.random()*35, speedMod);
+
+    let numShips = Math.max(1, Math.floor(Math.floor(level / 4) * diffMult));
+    for (let i = 0; i < numShips; i++) {
+        let rand = Math.random();
+        if (rand < 0.55) spawnTarget("tie_fighter", 15, speedMod * 1.2);
+        else spawnTarget("tie_interceptor", 15, speedMod * 1.7);
+    }
+}
+
+function beginHyperspaceTransition() {
+    hyperspaceApproachActive = false;
+    hyperspaceRift = null;
+    playSfx('glitch'); shake += 15; vibrate([30, 40, 30]);
+
+    // Hand the 2D fight off, same as a boss breaking for the cockpit -- nothing left behind
+    // carries over.
+    bullets = []; enemyBullets = []; powerups = []; targets = []; lightTrails = []; scrapDrops = [];
+    sentinelSpawnQueue = 0;
+
+    is3DMode = true;
+    levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0; tookDamageThisHyperspace = false;
+    spawnText(GAME_W/2, GAME_H/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40);
+    spawnText(GAME_W/2, GAME_H/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
+    updateUI();
+}
+
 function startLevel() {
     targets = []; powerups = []; enemyBullets = []; lightTrails = []; floatingTexts = []; scrapDrops = []; powerupSpawnedThisLevel = false;
     // Any sentinels still queued from a previous level are cancelled -- otherwise a Sentinel
@@ -2311,6 +2389,7 @@ function startLevel() {
     sentinelSpawnQueue = 0;
     bossPursuit = false; bossDeathTimer = 0;
     fleetBattleActive = false; allies = []; capitalShips = [];
+    hyperspaceApproachActive = false; hyperspaceApproachTimer = 0; hyperspaceRift = null;
     ship.x = GAME_W / 2; ship.y = GAME_H / 2; ship.xv = 0; ship.yv = 0; invulnTimer = 2.0;
 
     if (level > lifetimeStats.highestLevel && gameMode === "campaign") lifetimeStats.highestLevel = level;
@@ -2326,15 +2405,13 @@ function startLevel() {
         }
     }
 
-    is3DMode = (gameMode !== "rush") && (level % 7 === 0);
+    // Hyperspace levels no longer cut straight to the 3D anomaly -- they open with a short
+    // ordinary flying/combat beat (below, in the dispatch chain) while a rift visibly forms in
+    // the field, and only phase into the cockpit once beginHyperspaceTransition() fires. is3DMode
+    // itself only flips true at that later moment, same as a boss breaking for the asteroid field.
+    let isHyperspaceLevel = (gameMode !== "rush") && (level % 7 === 0);
+    is3DMode = false;
     hiveSwarmActive = false;
-
-    if (is3DMode) {
-        levelTimer3D = 30; targets3D = []; bullets3D = []; enemyBullets3D = []; camX = 0; camY = 0; tookDamageThisHyperspace = false;
-        spawnText(GAME_W/2, GAME_H/2, "HYPERSPACE ANOMALY!", "#ff00ff", 40); spawnText(GAME_W/2, GAME_H/2 + 40, "EVADE & SURVIVE 30s", "#00ffff", 20);
-        updateUI();
-        return;
-    }
 
     let diffMult = 1.0; let speedMult = 1.0;
     if (gameDifficulty === "easy") { diffMult = 0.6; speedMult = 0.7; }
@@ -2358,7 +2435,12 @@ function startLevel() {
             // climbing with the wave number via the shared speedMod/diffMult curve.
             spawnBossEncounter(BOSS_ROTATION[(level - 1) % BOSS_ROTATION.length], diffMult, speedMod);
             spawnText(GAME_W/2, 80, "WAVE " + level, "#ffcc00", 24);
-        } else if (level % 5 === 0 && !is3DMode) {
+        } else if (isHyperspaceLevel) {
+            // A short ordinary flying/combat beat before the rift pulls the ship in and the fight
+            // moves to the cockpit -- see beginHyperspaceTransition(). This used to cut straight
+            // to the 3D anomaly with no lead-in of any kind.
+            beginHyperspaceApproach(diffMult, speedMod);
+        } else if (level % 5 === 0) {
             spawnBossEncounter(bossForLevel(level), diffMult, speedMod);
         } else if (level % 6 === 0 && level % 5 !== 0) {
             // Every 6th filler level (never a boss level -- %5===0 always wins first) becomes a
@@ -2608,6 +2690,23 @@ function update(dt) {
     if (overheated) { heat -= 40 * dt; if (heat <= 0) { heat = 0; overheated = false; } }
     else { heat -= 20 * dt; if (heat < 0) heat = 0; }
     regenShields(dt);
+
+    if (hyperspaceApproachActive) {
+        hyperspaceRift.t += dt;
+        hyperspaceApproachTimer -= dt;
+        // Debris visibly streaming inward is what sells "the rift is pulling us in" -- pushed
+        // directly onto the shared particles array so it rides the existing render/fade/cleanup
+        // loop instead of needing a bespoke one.
+        let urgency = 1 - Math.max(0, hyperspaceApproachTimer) / HYPERSPACE_APPROACH_DURATION;
+        if (Math.random() < dt * (4 + urgency * 6)) {
+            let ang = Math.random() * Math.PI * 2, dist = 90 + Math.random() * 220;
+            let px = hyperspaceRift.x + Math.cos(ang) * dist, py = hyperspaceRift.y + Math.sin(ang) * dist;
+            let toCenter = Math.atan2(hyperspaceRift.y - py, hyperspaceRift.x - px);
+            let spd = 1.5 + urgency * 3;
+            particles.push({ x: px, y: py, xv: Math.cos(toCenter) * spd, yv: Math.sin(toCenter) * spd, life: 1.3, color: Math.random() < 0.5 ? "#ff66ff" : "#66ffff", size: 2 + Math.random() * 1.5 });
+        }
+        if (hyperspaceApproachTimer <= 0) { beginHyperspaceTransition(); return; }
+    }
 
     const wrap = (obj) => { if (obj.x < -obj.r) obj.x = GAME_W + obj.r; else if (obj.x > GAME_W + obj.r) obj.x = -obj.r; if (obj.y < -obj.r) obj.y = GAME_H + obj.r; else if (obj.y > GAME_H + obj.r) obj.y = -obj.r; };
     wrap(ship);
@@ -3042,8 +3141,10 @@ function update(dt) {
 
     // A Sentinel Swarm still has reinforcements inbound even when the screen is momentarily
     // clear -- ending the level here used to complete it after only the opening wave and spill
-    // the remaining queue into the next level.
-    if (targets.length === 0 && sentinelSpawnQueue === 0 && gameState === "PLAYING") {
+    // the remaining queue into the next level. A hyperspace approach is timer-gated rather than
+    // wave-gated -- clearing every asteroid/fighter fast must not skip the rift and end the level
+    // early; only hyperspaceApproachTimer running out (beginHyperspaceTransition) can end it.
+    if (targets.length === 0 && sentinelSpawnQueue === 0 && gameState === "PLAYING" && !hyperspaceApproachActive) {
         let clearedABoss = (gameMode === "rush") || (level % 5 === 0 && !is3DMode);
         level++; updateUI(); bullets = []; enemyBullets = []; lightTrails = []; floatingTexts = []; hyperspace = 0; playSfx('powerup');
         // Surviving a boss earns a build choice rather than just a score spike.
@@ -3130,7 +3231,7 @@ function render3D() {
             }
         } else if (t.hitFlash > 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,0,t.r,0,Math.PI*2); ctx.fill(); }
         else {
-            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false);
+            if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, true);
             else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
             // A pursuit boss reuses its 2D artwork -- the designs draw around the origin at a
             // given radius, which is exactly what this transform already provides. Its health is
@@ -3555,6 +3656,7 @@ function render() {
     // Capital ships sit behind everything -- large, dim, non-interactive silhouettes trading an
     // occasional beam for atmosphere, like the background fleet exchange in a Star Wars battle.
     if (fleetBattleActive) capitalShips.forEach(c => drawCapitalShip(ctx, c));
+    if (hyperspaceApproachActive) drawHyperspaceRift(ctx, hyperspaceRift, 1 - Math.max(0, hyperspaceApproachTimer) / HYPERSPACE_APPROACH_DURATION);
 
     lightTrails.forEach(t => { applyGlow(ctx, "#00ffff", 15); ctx.fillStyle = `rgba(0, 255, 255, ${t.life / 8.0})`; ctx.beginPath(); ctx.arc(t.x, t.y, 6, 0, Math.PI*2); ctx.fill(); clearGlow(ctx); });
     scrapDrops.forEach(s => { applyGlow(ctx, "#ff00ff", 10); ctx.fillStyle = `rgba(255, 0, 255, ${s.life/8})`; ctx.fillRect(s.x-3, s.y-3, 6, 6); clearGlow(ctx); });
@@ -3593,7 +3695,7 @@ function render() {
         // on the hull. Those types get the rim light and hazard lights below without the AO fill.
         let useAO = !skipShading && (t.type === "asteroid" || t.type.startsWith("boss"));
         if (useAO) applyAmbientOcclusion(ctx, t.r, t.type.startsWith("boss") ? 0.4 : 0.26, t.type === "asteroid" ? 0.95 : 1.05);
-        if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, false);
+        if (t.type === "tie_fighter") ShipDesigns.tiefighter.draw(ctx, t.r, true);
         else if (t.type === "satellite") TargetDesigns.satellite.draw(ctx, t.r);
         else TargetDesigns[t.type] ? TargetDesigns[t.type].draw(ctx, t.r, t) : TargetDesigns["asteroid"].draw(ctx, t.r, t);
         if (!skipShading) {
@@ -3650,7 +3752,11 @@ function render() {
     if (gameState === "PLAYING" || gameState === "LEVEL_TRANSITION" || gameState === "PAUSED" || gameState === "UPGRADE_CHOICE") {
         if (invulnTimer <= 0 || frames % 10 < 5) {
             let chaosScale = chaosTimer > 0 ? 1 + Math.sin(frames * 0.3) * 0.25 : 1;
-            ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(ship.angle); ctx.scale(chaosScale, chaosScale); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
+            // A gentle idle float while coasting -- purely a render-time offset, never touches
+            // ship.x/y, so it can't affect collision or physics. Settles out under thrust, which
+            // reads as the hull actually being under power rather than drifting loose.
+            let hoverBob = ship.thrusting ? 0 : Math.sin(frames * 0.05) * 1.6;
+            ctx.save(); ctx.translate(ship.x, ship.y + hoverBob); ctx.rotate(ship.angle); ctx.scale(chaosScale, chaosScale); ShipDesigns[selectedShipType].draw(ctx, ship.r, ship.thrusting); ctx.restore();
             if (playerShield > 0) { applyGlow(ctx, "#00ffff", 10); ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + (playerShield/100)*0.5})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.6, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
             if (multishotTimer > 0) { applyGlow(ctx, "#ff00ff", 10); ctx.strokeStyle = `rgba(255, 0, 255, ${Math.abs(Math.sin(frames/10))})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 1.3, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
             if (chaosTimer > 0) { let hue = (frames*8)%360; applyGlow(ctx, `hsl(${hue},100%,60%)`, 14); ctx.strokeStyle = `hsl(${hue},100%,60%)`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ship.x, ship.y, ship.r * 2.0, 0, Math.PI*2); ctx.stroke(); clearGlow(ctx); }
